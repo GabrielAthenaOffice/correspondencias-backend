@@ -30,6 +30,7 @@
 		<version>0.0.1-SNAPSHOT</version>
 		<name>projeto-correspondencia-athena-backend-main</name>
 		<description>Backend Athena Correspondencia</description>
+        <spring-cloud.version>2025.0.0</spring-cloud.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -75,12 +76,30 @@
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>2.5.0</version> <!-- Verifique a versão mais recente -->
+			<version>2.5.0</version> <!-- Depois verificar versão mais recente -->
 		</dependency>
+
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
 
 	</dependencies>
 
-	<build>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+
+    <build>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

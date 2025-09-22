@@ -1,0 +1,33 @@
+package com.recepcao.correspondencia.agencias;
+
+import java.util.List;
+
+public class Unidade {
+
+    private static final List<String> UNIDADES_ATHENA = List.of(
+      "ATHENA BELEM LTDA, 55.504.722/0001-75",
+            "ATHENA BELO HORIZONTE LTDA, 50.672.664/0001-75",
+            "ATHENA BRASILIA LTDA, 54.790.270/0001-72",
+            "ATHENA CAMPINA GRANDE LTDA, 54.735.201/0001-66",
+            "ATHENA CONSUL NEG. E SERV. LTDA",
+            "ATHENA CUIABA LTDA, 54.734.257/0001-04",
+            "ATHENA CURITIBA LTDA, 50.640.354/0001-79",
+            "ATHENA FLORIANOPOLIS LTDA, 50.978.416/0001-57",
+            "ATHENA FORTALEZA LTDA, 52.723.557/0001-54",
+            "ATHENA GOIANIA LTDA, 53.672.579/0001-03",
+            "ATHENA GUARARAPES LTDA, 59.651.668/0001-41",
+            "ATLAS JP LTDA, 53.191.817/0001-50",
+            "ATHENA MANAUS LTDA, 52.738.365/0001-11",
+            "ATHENA NATAL LTDA, 50.770.572/0001-28",
+            "ATHENA PALMAS LTDA, 54.493.774/0001-20",
+            "ATHENA PORTO ALEGRE LTDA, 50.648.711/0001-45",
+            "ATHENA RECIFE LTDA, 50.773.013/0001-71 ",
+            "ATHENA RIO DE JANEIRO LTDA, 51.932.328/0001-87",
+            "ATHENA SALVADOR BA LTDA, 54.967.721/0001-02",
+            "ATHENA SAO LUIS LTDA, 54.570.537/0001-16",
+            "ATHENA SAO PAULO LTDA, 50.673.215/0001-41",
+            "ATHENA VITORIA LTDA, 50.733.676/0001-62"
+    );
+
+
+}

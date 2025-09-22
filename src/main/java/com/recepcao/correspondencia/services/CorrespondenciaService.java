@@ -1,10 +1,13 @@
 package com.recepcao.correspondencia.services;
 
+import com.recepcao.correspondencia.agencias.Unidade;
 import com.recepcao.correspondencia.clients.ConexaClients;
 import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
 import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.*;
+import com.recepcao.correspondencia.feign.AditivoRequestDTO;
+import com.recepcao.correspondencia.feign.AditivoResponseDTO;
 import com.recepcao.correspondencia.mapper.CustomerResponseMapper;
 import com.recepcao.correspondencia.mapper.EmpresaMapper;
 import com.recepcao.correspondencia.mapper.enums.Situacao;
@@ -88,6 +91,17 @@ public class CorrespondenciaService {
             }
         }
         return false;
+    }
+
+    /**
+     * CRIA O ADITIVO BASEADO NA EMPRESA PRESENTE
+     */
+    public AditivoResponseDTO solicitarCriacaoAditivo(Unidade unidade, Empresa empresa) {
+
+
+        AditivoRequestDTO aditivoRequestDTO = new AditivoRequestDTO();
+
+        aditivoRequestDTO.setEmpresaId(String.valueOf(empresa.getId()));
     }
 
     /**
