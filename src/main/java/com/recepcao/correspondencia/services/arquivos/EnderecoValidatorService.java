@@ -14,7 +14,7 @@ public class EnderecoValidatorService {
             "Rua José Bernardino, 97, Campina Grande, PB, 58408-027",
             "Avenida Desembargador Vitor Lima, 260, Florianópolis, SC, 88040-400",
             "Avenida Dom Luís, 500, Fortaleza, CE, 60160-230",
-            "Avenida República do Líbado, 2341, Goiânia, GO, 74125-904",
+            "Avenida República do Líbano, 2341, Goiânia, GO, 74125-904",
             "Avenida Governador Argemiro de Figueiredo, 210, João Pessoa, PB, 58037-030",
             "Rua Franco de Sá, 310, Manaus, AM, 69079- 210",
             "Rua DR. Luiz Felipe Camara, 55, Rio Grande do Norte, RN",

@@ -6,16 +6,20 @@ import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
 import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.*;
+import com.recepcao.correspondencia.feign.AditivoContratual;
+import com.recepcao.correspondencia.feign.AditivoRepository;
 import com.recepcao.correspondencia.feign.AditivoRequestDTO;
 import com.recepcao.correspondencia.feign.AditivoResponseDTO;
 import com.recepcao.correspondencia.mapper.CustomerResponseMapper;
 import com.recepcao.correspondencia.mapper.EmpresaMapper;
+import com.recepcao.correspondencia.mapper.UnidadeMapper;
 import com.recepcao.correspondencia.mapper.enums.Situacao;
 import com.recepcao.correspondencia.mapper.enums.StatusCorresp;
 import com.recepcao.correspondencia.mapper.enums.StatusEmpresa;
 import com.recepcao.correspondencia.repositories.CorrespondenciaRepository;
 import com.recepcao.correspondencia.repositories.CustomerRepository;
 import com.recepcao.correspondencia.repositories.EmpresaRepository;
+import com.recepcao.correspondencia.services.arquivos.UnidadeService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +30,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -41,6 +46,8 @@ public class CorrespondenciaService {
     private final EmpresaRepository empresaRepository;
     private final ConexaClients conexaClient;
     private final EmailService emailService;
+    private final AditivoRepository aditivoRepository;
+    private UnidadeService unidadeService;
     // enderecoValidatorService removido porque não é utilizado neste serviço
     private final HistoricoService historicoService;
     private final CustomerRepository customerRepository;
@@ -96,12 +103,46 @@ public class CorrespondenciaService {
     /**
      * CRIA O ADITIVO BASEADO NA EMPRESA PRESENTE
      */
-    public AditivoResponseDTO solicitarCriacaoAditivo(Unidade unidade, Empresa empresa) {
+    public AditivoResponseDTO solicitarCriacaoAditivo(String nomeUnidade, Empresa empresa, AditivoRequestDTO dadosFormulario) {
+        UnidadeService.UnidadeInfo info = unidadeService.getUnidadeInfo(nomeUnidade);
 
+        if(info == null) {
+            throw new APIExceptions("Unidade não encontrada: " + nomeUnidade);
+        }
 
         AditivoRequestDTO aditivoRequestDTO = new AditivoRequestDTO();
 
         aditivoRequestDTO.setEmpresaId(String.valueOf(empresa.getId()));
+
+        aditivoRequestDTO.setUnidadeNome(nomeUnidade);
+        aditivoRequestDTO.setUnidadeCnpj(info.cnpj());
+        aditivoRequestDTO.setUnidadeEndereco(info.endereco());
+
+        aditivoRequestDTO.setPessoaFisicaNome(empresa.getNomeEmpresa());
+        aditivoRequestDTO.setPessoaFisicaEndereco(String.valueOf(empresa.getEndereco()));
+        aditivoRequestDTO.setPessoaFisicaCpf(dadosFormulario.getPessoaFisicaCpf());
+
+        aditivoRequestDTO.setDataInicioContrato(dadosFormulario.getDataInicioContrato());
+
+        aditivoRequestDTO.setPessoaJuridicaNome(dadosFormulario.getPessoaJuridicaNome());
+        aditivoRequestDTO.setPessoaJuridicaCnpj(dadosFormulario.getPessoaJuridicaCnpj());
+        aditivoRequestDTO.setPessoaJuridicaEndereco(dadosFormulario.getPessoaJuridicaEndereco());
+
+        aditivoRequestDTO.setLocalData(String.valueOf(LocalDateTime.now()));
+
+        AditivoContratual aditivoContratual = UnidadeMapper.toEntity(aditivoRequestDTO);
+
+        AditivoContratual salvo = aditivoRepository.save(aditivoContratual);
+
+        historicoService.registrar(
+                "Aditivo Criado para Empresa",
+                salvo.getId(),
+                "Aviso de Aditivo Enviado",
+                "Enviado e-mail solicitando mudança de CPF para CNPJ."
+        );
+
+        return new AditivoResponseDTO("SUCESSO",
+                "Aditivo registrado com sucesso", String.valueOf(salvo.getEmpresaId()));
     }
 
     /**

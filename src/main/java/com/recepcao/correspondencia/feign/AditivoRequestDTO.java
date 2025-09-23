@@ -12,39 +12,22 @@ import java.time.LocalDate;
 @AllArgsConstructor
 @NoArgsConstructor
 public class AditivoRequestDTO {
-    @NotBlank
+
     private String empresaId;
 
-    @NotBlank
     private String unidadeNome;
-
-    @NotBlank
     private String unidadeCnpj;
-
-    @NotBlank
     private String unidadeEndereco;
 
-    @NotBlank
     private String pessoaFisicaNome;
-
-    @NotBlank
     private String pessoaFisicaCpf;
-
-    @NotBlank
     private String pessoaFisicaEndereco;
 
-    @NotNull
     private LocalDate dataInicioContrato;
-
-    @NotBlank
     private String pessoaJuridicaNome;
-
-    @NotBlank
     private String pessoaJuridicaCnpj;
 
-    @NotBlank
     private String pessoaJuridicaEndereco;
 
-    @NotBlank
     private String localData;
 }

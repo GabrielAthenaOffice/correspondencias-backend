@@ -32,6 +32,7 @@ public class UnidadeController {
         }
 
         UnidadeDTO dto = new UnidadeDTO(nome, info.cnpj(), info.endereco());
+
         return ResponseEntity.ok(dto);
     }
 }

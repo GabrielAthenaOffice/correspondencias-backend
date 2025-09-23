@@ -5,7 +5,11 @@ import com.recepcao.correspondencia.dto.CorrespondenciaComEmpresaDTO;
 import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.Correspondencia;
+import com.recepcao.correspondencia.entities.Empresa;
+import com.recepcao.correspondencia.feign.AditivoRequestDTO;
+import com.recepcao.correspondencia.feign.AditivoResponseDTO;
 import com.recepcao.correspondencia.mapper.enums.StatusCorresp;
+import com.recepcao.correspondencia.repositories.EmpresaRepository;
 import com.recepcao.correspondencia.services.CorrespondenciaService;
 import com.recepcao.correspondencia.services.arquivos.StorageService;
 import jakarta.validation.Valid;
@@ -26,6 +30,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/correspondencias")
@@ -35,6 +40,7 @@ public class CorrespondenciaController {
 
     private final CorrespondenciaService correspondenciaService;
     private final StorageService storageService;
+    private final EmpresaRepository empresaRepository;
 
     /**
      * ✅ Recebe uma nova correspondência e processa (regra de negócio completa).
@@ -287,4 +293,24 @@ public class CorrespondenciaController {
         }
     }
 
+
+    /**
+     * CRIAÇÃO DE ADITIVOS
+     * Ex: PUT /api/correspondencias/{id}
+     */
+    @PostMapping("/criar-aditivo")
+    public ResponseEntity<AditivoResponseDTO> criarAditivo(
+            @RequestParam String nomeUnidade,
+            @RequestParam Long empresaId,
+            @RequestParam Long clienteId,
+            @RequestBody AditivoRequestDTO dadosFormulario
+    ) {
+        // Aqui você buscaria empresa e cliente no repositório
+        Optional<Empresa> empresa = empresaRepository.findById(empresaId);
+
+        Empresa empresa1 = empresa.get();
+
+        AditivoResponseDTO response = correspondenciaService.solicitarCriacaoAditivo(nomeUnidade, empresa1, dadosFormulario);
+        return ResponseEntity.ok(response);
+    }
 }

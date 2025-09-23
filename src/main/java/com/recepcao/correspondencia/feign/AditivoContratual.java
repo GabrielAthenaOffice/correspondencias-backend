@@ -2,11 +2,17 @@ package com.recepcao.correspondencia.feign;
 
 import com.recepcao.correspondencia.entities.Empresa;
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
 public class AditivoContratual {
 
     @Id
@@ -14,9 +20,7 @@ public class AditivoContratual {
     private Long id;
 
     // Relacionamento com Empresa
-    @ManyToOne
-    @JoinColumn(name = "empresa_id")
-    private Empresa empresa;
+    private Long empresaId;
 
     private String unidadeNome;      // ATHENA OFFICE LTDA
     private String unidadeCnpj;
