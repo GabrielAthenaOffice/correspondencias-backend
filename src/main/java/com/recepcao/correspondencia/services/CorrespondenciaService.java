@@ -47,7 +47,7 @@ public class CorrespondenciaService {
     private final ConexaClients conexaClient;
     private final EmailService emailService;
     private final AditivoRepository aditivoRepository;
-    private UnidadeService unidadeService;
+    private final UnidadeService unidadeService;
     // enderecoValidatorService removido porque não é utilizado neste serviço
     private final HistoricoService historicoService;
     private final CustomerRepository customerRepository;
@@ -104,7 +104,7 @@ public class CorrespondenciaService {
      * CRIA O ADITIVO BASEADO NA EMPRESA PRESENTE
      */
     public AditivoResponseDTO solicitarCriacaoAditivo(String nomeUnidade, Empresa empresa, AditivoRequestDTO dadosFormulario) {
-        UnidadeService.UnidadeInfo info = unidadeService.getUnidadeInfo(nomeUnidade);
+        UnidadeService.UnidadeInfo info = unidadeService.getUnidadeInfo(dadosFormulario.getUnidadeNome());
 
         if(info == null) {
             throw new APIExceptions("Unidade não encontrada: " + nomeUnidade);

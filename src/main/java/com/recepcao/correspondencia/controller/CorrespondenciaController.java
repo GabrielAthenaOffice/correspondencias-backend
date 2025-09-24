@@ -302,7 +302,6 @@ public class CorrespondenciaController {
     public ResponseEntity<AditivoResponseDTO> criarAditivo(
             @RequestParam String nomeUnidade,
             @RequestParam Long empresaId,
-            @RequestParam Long clienteId,
             @RequestBody AditivoRequestDTO dadosFormulario
     ) {
         // Aqui você buscaria empresa e cliente no repositório

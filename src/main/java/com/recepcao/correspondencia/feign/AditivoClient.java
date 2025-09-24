@@ -5,7 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@FeignClient(name = "aditivo_api", url = "${api.aditivo.url}")
+@FeignClient(name = "aditivo-api", url = "${api.aditivo.url}")
 public interface AditivoClient {
 
     @PostMapping("/aditivos")
