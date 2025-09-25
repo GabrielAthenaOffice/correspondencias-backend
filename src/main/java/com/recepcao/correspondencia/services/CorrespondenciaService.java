@@ -6,10 +6,7 @@ import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
 import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.*;
-import com.recepcao.correspondencia.feign.AditivoContratual;
-import com.recepcao.correspondencia.feign.AditivoRepository;
-import com.recepcao.correspondencia.feign.AditivoRequestDTO;
-import com.recepcao.correspondencia.feign.AditivoResponseDTO;
+import com.recepcao.correspondencia.feign.*;
 import com.recepcao.correspondencia.mapper.CustomerResponseMapper;
 import com.recepcao.correspondencia.mapper.EmpresaMapper;
 import com.recepcao.correspondencia.mapper.UnidadeMapper;
@@ -27,6 +24,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -47,6 +45,7 @@ public class CorrespondenciaService {
     private final ConexaClients conexaClient;
     private final EmailService emailService;
     private final AditivoRepository aditivoRepository;
+    private final AditivoClient aditivoClient;
     private final UnidadeService unidadeService;
     // enderecoValidatorService removido porque não é utilizado neste serviço
     private final HistoricoService historicoService;
@@ -132,6 +131,8 @@ public class CorrespondenciaService {
 
         AditivoContratual aditivoContratual = UnidadeMapper.toEntity(aditivoRequestDTO);
 
+        ResponseEntity<AditivoResponseDTO> response = aditivoClient.criarAditivo(aditivoRequestDTO);
+
         AditivoContratual salvo = aditivoRepository.save(aditivoContratual);
 
         historicoService.registrar(
@@ -141,8 +142,7 @@ public class CorrespondenciaService {
                 "Enviado e-mail solicitando mudança de CPF para CNPJ."
         );
 
-        return new AditivoResponseDTO("SUCESSO",
-                "Aditivo registrado com sucesso", String.valueOf(salvo.getEmpresaId()));
+        return response.getBody();
     }
 
     /**
