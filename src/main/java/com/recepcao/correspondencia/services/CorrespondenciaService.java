@@ -103,7 +103,7 @@ public class CorrespondenciaService {
      * CRIA O ADITIVO BASEADO NA EMPRESA PRESENTE
      */
     public AditivoResponseDTO solicitarCriacaoAditivo(String nomeUnidade, Empresa empresa, AditivoRequestDTO dadosFormulario) {
-        UnidadeService.UnidadeInfo info = unidadeService.getUnidadeInfo(dadosFormulario.getUnidadeNome());
+        UnidadeService.UnidadeInfo info = unidadeService.getUnidadeInfo(nomeUnidade);
 
         if(info == null) {
             throw new APIExceptions("Unidade não encontrada: " + nomeUnidade);
@@ -118,14 +118,14 @@ public class CorrespondenciaService {
         aditivoRequestDTO.setUnidadeEndereco(info.endereco());
 
         aditivoRequestDTO.setPessoaFisicaNome(empresa.getNomeEmpresa());
-        aditivoRequestDTO.setPessoaFisicaEndereco(String.valueOf(empresa.getEndereco()));
+        aditivoRequestDTO.setPessoaFisicaEndereco(String.valueOf(empresa.getEndereco().enderecoFormatado()));
         aditivoRequestDTO.setPessoaFisicaCpf(dadosFormulario.getPessoaFisicaCpf());
 
         aditivoRequestDTO.setDataInicioContrato(dadosFormulario.getDataInicioContrato());
 
         aditivoRequestDTO.setPessoaJuridicaNome(dadosFormulario.getPessoaJuridicaNome());
         aditivoRequestDTO.setPessoaJuridicaCnpj(dadosFormulario.getPessoaJuridicaCnpj());
-        aditivoRequestDTO.setPessoaJuridicaEndereco(dadosFormulario.getPessoaJuridicaEndereco());
+        aditivoRequestDTO.setPessoaJuridicaEndereco(info.endereco());
 
         aditivoRequestDTO.setLocalData(String.valueOf(LocalDateTime.now()));
 
