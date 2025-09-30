@@ -29,7 +29,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import com.recepcao.correspondencia.dto.CorrespondenciaComEmpresaDTO;
@@ -127,7 +129,11 @@ public class CorrespondenciaService {
         aditivoRequestDTO.setPessoaJuridicaCnpj(dadosFormulario.getPessoaJuridicaCnpj());
         aditivoRequestDTO.setPessoaJuridicaEndereco(info.endereco());
 
-        aditivoRequestDTO.setLocalData(String.valueOf(LocalDateTime.now()));
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd 'de' MMMM 'de' yyyy", new Locale("pt", "BR"));
+
+        String localData = info.cidade() + ", " + LocalDate.now().format(formatter);
+
+        aditivoRequestDTO.setLocalData(localData);
 
         AditivoContratual aditivoContratual = UnidadeMapper.toEntity(aditivoRequestDTO);
 

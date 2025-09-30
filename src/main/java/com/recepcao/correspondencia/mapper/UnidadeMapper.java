@@ -24,7 +24,7 @@ public class UnidadeMapper {
         aditivo.setPessoaJuridicaCnpj(dto.getPessoaJuridicaCnpj());
         aditivo.setPessoaJuridicaEndereco(dto.getPessoaJuridicaEndereco());
 
-        aditivo.setDataCriacao(LocalDateTime.parse(dto.getLocalData()));
+        aditivo.setDataCriacao(dto.getLocalData());
 
         return aditivo;
     }

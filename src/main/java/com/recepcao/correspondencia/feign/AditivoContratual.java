@@ -36,6 +36,6 @@ public class AditivoContratual {
     private String pessoaJuridicaCnpj; // preenchido manualmente
     private String pessoaJuridicaEndereco; // puxado do cadastro (se houver)
 
-    private LocalDateTime dataCriacao = LocalDateTime.now();
+    private String dataCriacao;
 }
 
