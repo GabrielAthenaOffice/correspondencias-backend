@@ -31,6 +31,11 @@
 		<name>projeto-correspondencia-athena-backend-main</name>
 		<description>Backend Athena Correspondencia</description>
         <spring-cloud.version>2025.0.0</spring-cloud.version>
+
+        <!-- Configurações de encoding -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <resource.encoding>UTF-8</resource.encoding>
 	</properties>
 	<dependencies>
 		<dependency>
