@@ -68,24 +68,22 @@ public class ConexaClients {
 
 // === ConexaClients ===
 
-    // ConexaClients.java
     public Optional<String> buscarCpfPorCustomerId(Long customerId) {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(conexaApiConfig.getToken());
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-        // 1) Busca o próprio customer (pra cruzar nome/emails/telefones)
-        CustomerResponse cust = buscarEmpresaPorId(customerId);
+        // Conexa quer array: customerId[]=5977 (pode repetir p/ vários)
+        String url = conexaApiConfig.getBaseUrl()
+                + "/persons?customerId[]=" + customerId
+                + "&isIndividualCustomer=true"; // opcional: já filtra PF
 
-        // 2) Lista pessoas do cliente
-        // AJUSTE O PATH CONFORME A DOC: ex.: "/persons?customerId=" ou "/customers/{id}/persons"
-        String url = conexaApiConfig.getBaseUrl() + "/persons?customerId=" + customerId;
         try {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-            return extrairCpfDaListaDePessoas(resp.getBody(), customerId, cust);
-        } catch (Exception e) {
-            log.warn("Falha ao consultar persons por customerId {}: {}", customerId, e.getMessage());
+            return extrairCpfDaListaDePessoas(resp.getBody(), customerId, buscarEmpresaPorId(customerId));
+        } catch (HttpClientErrorException e) {
+            log.warn("Falha ao consultar persons por customerId {}: {} - body={}", customerId, e.getStatusCode(), e.getResponseBodyAsString());
             return Optional.empty();
         }
     }
