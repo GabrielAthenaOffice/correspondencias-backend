@@ -4,10 +4,6 @@ package com.recepcao.correspondencia.clients;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.recepcao.correspondencia.config.ConexaApiConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.util.UriComponentsBuilder;
-import org.springframework.web.util.UriUtils;
 import com.recepcao.correspondencia.dto.responses.ConexaCustomerListResponse;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import lombok.RequiredArgsConstructor;
@@ -18,10 +14,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -72,165 +65,114 @@ public class ConexaClients {
 
 // === ConexaClients ===
 
+    // === PUBLIC ===
     public Optional<String> buscarCpfPorCustomerId(Long customerId) {
-        // 1) tenta GET sem colchete (alguns backends aceitam repetido como array)
-        Optional<String> viaGet = tentarGetPersonsSemColchete(customerId);
-        if (viaGet.isPresent()) return viaGet;
+        // 1) POST persons por customerId
+        Optional<String> v = postPersonsAndPickCpf(Map.of("customerId", List.of(customerId)));
+        if (v.isPresent()) return v;
 
-        // 2) POST JSON com array no corpo (mais confiável)
-        Optional<String> viaPostJson = tentarPostPersonsJsonArray(customerId);
-        if (viaPostJson.isPresent()) return viaPostJson;
-
-        // 3) (fallback) POST form-url-encoded com customerId[0] no body
-        return tentarPostPersonsFormArray(customerId);
-    }
-
-    private Optional<String> tentarGetPersonsSemColchete(Long customerId) {
-        try {
-            HttpHeaders headers = stdHeaders();
-            URI uri = UriComponentsBuilder
-                    .fromHttpUrl(conexaApiConfig.getBaseUrl() + "/persons")
-                    .queryParam("customerId", customerId) // sem []
-                    .build(true).toUri();
-            ResponseEntity<String> r = restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers), String.class);
-            return extrairCpfDaListaDePessoas(r.getBody(), customerId, buscarEmpresaPorId(customerId));
-        } catch (HttpClientErrorException e) {
-            // se reclamar que "must be array", seguimos pro POST
-            return Optional.empty();
+        // 2) fallback: POST persons por companyId do customer
+        CustomerResponse cust = buscarEmpresaPorId(customerId);
+        if (cust != null && cust.getCustomerId() != null) {
+            v = postPersonsAndPickCpf(Map.of("companyId", List.of(cust.getCustomerId())));
+            if (v.isPresent()) return v;
         }
+
+        // 3) acabou
+        return Optional.empty();
     }
 
-    private Optional<String> tentarPostPersonsJsonArray(Long customerId) {
+    // === PRIVATE ===
+    private Optional<String> postPersonsAndPickCpf(Map<String, Object> filtro) {
         try {
-            HttpHeaders headers = stdHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-
-            Map<String, Object> body = Map.of("customerId", List.of(customerId));
-            ResponseEntity<String> r = restTemplate.exchange(
-                    conexaApiConfig.getBaseUrl() + "/persons",
-                    HttpMethod.POST,
-                    new HttpEntity<>(body, headers),
-                    String.class
-            );
-            return extrairCpfDaListaDePessoas(r.getBody(), customerId, buscarEmpresaPorId(customerId));
-        } catch (HttpClientErrorException e) {
-            return Optional.empty();
-        }
-    }
-
-    private Optional<String> tentarPostPersonsFormArray(Long customerId) {
-        try {
-            HttpHeaders headers = stdHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
-            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-            form.add("customerId[0]", String.valueOf(customerId)); // array no corpo (não na URL)
+            HttpHeaders h = new HttpHeaders();
+            h.setBearerAuth(conexaApiConfig.getToken());
+            h.setAccept(List.of(MediaType.APPLICATION_JSON));
+            h.setContentType(MediaType.APPLICATION_JSON);
 
             ResponseEntity<String> r = restTemplate.exchange(
                     conexaApiConfig.getBaseUrl() + "/persons",
                     HttpMethod.POST,
-                    new HttpEntity<>(form, headers),
+                    new HttpEntity<>(filtro, h),
                     String.class
             );
-            return extrairCpfDaListaDePessoas(r.getBody(), customerId, buscarEmpresaPorId(customerId));
+
+            String body = r.getBody();
+            if (body == null || body.isBlank()) return Optional.empty();
+
+            // LOG rápido p/ depurar (curto, não vaza dados sensíveis)
+            log.debug("persons({}) -> {} chars, init='{}'",
+                    filtro.keySet(), body.length(),
+                    body.substring(0, Math.min(200, body.length())).replaceAll("\\s+"," ").trim());
+
+            return extrairCpfFlex(body);
         } catch (HttpClientErrorException e) {
+            log.warn("POST /persons {} => {} body={}", filtro.keySet(), e.getStatusCode(), e.getResponseBodyAsString());
             return Optional.empty();
-        }
-    }
-
-    private HttpHeaders stdHeaders() {
-        HttpHeaders h = new HttpHeaders();
-        h.setBearerAuth(conexaApiConfig.getToken());
-        h.setAccept(List.of(MediaType.APPLICATION_JSON));
-        return h;
-    }
-
-
-    private Optional<String> extrairCpfDaListaDePessoas(String json, Long customerId, CustomerResponse cust) {
-        try {
-            JsonNode root = new ObjectMapper().readTree(json);
-            JsonNode arr = root.has("data") ? root.get("data") : root; // suporta payloads com "data" ou direto
-            if (!arr.isArray()) return Optional.empty();
-
-            // 1) candidatos com customerId e CPF válido
-            List<JsonNode> candidatos = new ArrayList<>();
-            arr.forEach(n -> {
-                if (n.path("customerId").asLong(-1) == customerId) {
-                    String cpf = limparCpf(n.path("cpf").asText(null));
-                    if (isCpfValido(cpf)) candidatos.add(n);
-                }
-            });
-            if (candidatos.isEmpty()) return Optional.empty();
-
-            // 2) prioriza PF titular
-            Optional<String> titular = candidatos.stream()
-                    .filter(n -> n.path("isIndividualCustomer").asBoolean(false))
-                    .map(n -> limparCpf(n.path("cpf").asText(null)))
-                    .findFirst();
-            if (titular.isPresent()) return titular;
-
-            // 3) senão, sócios
-            Optional<String> socio = candidatos.stream()
-                    .filter(n -> n.path("isCompanyPartner").asBoolean(false))
-                    .map(n -> limparCpf(n.path("cpf").asText(null)))
-                    .findFirst();
-            if (socio.isPresent()) return socio;
-
-            // 4) senão, aproximação por nome/email/telefone do customer
-            String nomeCustomer = cust != null ? normalizar(cust.getName()) : null;
-            Set<String> emails = cust != null && cust.getEmailsMessage()!=null
-                    ? cust.getEmailsMessage().stream().map(this::normalizar).collect(Collectors.toSet())
-                    : Set.of();
-            Set<String> phones = cust != null && cust.getPhones()!=null
-                    ? cust.getPhones().stream().map(p -> p.replaceAll("\\D+","")).collect(Collectors.toSet())
-                    : Set.of();
-
-            return candidatos.stream()
-                    .sorted((a,b) -> Integer.compare(score(a, nomeCustomer, emails, phones),
-                            score(b, nomeCustomer, emails, phones)))
-                    .map(n -> limparCpf(n.path("cpf").asText(null)))
-                    .reduce((first, second) -> second); // pega o maior score (último após sort crescente)
         } catch (Exception e) {
-            log.warn("Falha ao parsear persons: {}", e.getMessage());
+            log.warn("POST /persons {} falhou: {}", filtro.keySet(), e.getMessage());
             return Optional.empty();
         }
     }
 
-    private int score(JsonNode n, String nomeCustomer, Set<String> emails, Set<String> phones) {
-        int s = 0;
-        if (n.path("isCompanyPartner").asBoolean(false)) s += 10;
-        if (nomeCustomer != null && normalizar(n.path("name").asText("")).equals(nomeCustomer)) s += 20;
+    private Optional<String> extrairCpfFlex(String json) {
+        try {
+            ObjectMapper om = new ObjectMapper();
+            JsonNode root = om.readTree(json);
 
-        // match por email
-        if (!emails.isEmpty() && n.has("emails") && n.get("emails").isArray()) {
-            for (JsonNode e : n.get("emails")) if (emails.contains(normalizar(e.asText()))) { s += 10; break; }
-        }
-        // match por telefone
-        if (!phones.isEmpty()) {
-            String cell = n.path("cellNumber").asText("");
-            String cellDigits = cell.replaceAll("\\D+","");
-            if (!cellDigits.isBlank() && phones.contains(cellDigits)) s += 10;
-            if (n.has("phones") && n.get("phones").isArray()) {
-                for (JsonNode p : n.get("phones")) {
-                    String d = p.asText("").replaceAll("\\D+","");
-                    if (phones.contains(d)) { s += 10; break; }
-                }
+            // normaliza nó da lista
+            JsonNode node = root;
+            if (root.has("data")) node = root.get("data");
+            if (node.has("items")) node = node.get("items");
+            if (node.has("results")) node = node.get("results");
+            if (!node.isArray()) {
+                // pode vir objeto único
+                return pickCpfFromNode(node);
             }
+
+            // varre array e pega o primeiro CPF válido
+            for (JsonNode n : node) {
+                Optional<String> cpf = pickCpfFromNode(n);
+                if (cpf.isPresent()) return cpf;
+            }
+        } catch (Exception e) {
+            log.warn("Parse persons falhou: {}", e.getMessage());
         }
-        return s;
+        return Optional.empty();
     }
 
-    private String limparCpf(String v) { return v == null ? null : v.replaceAll("\\D+",""); }
+    private Optional<String> pickCpfFromNode(JsonNode n) {
+        if (n == null || n.isNull()) return Optional.empty();
 
-    private String normalizar(String s) {
-        if (s == null) return null;
-        String t = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
-                .replaceAll("\\p{M}+", "");
-        return t.trim().toLowerCase(Locale.ROOT);
+        // direto
+        String cpf = cleanCpf(n.path("cpf").asText(null));
+        if (isCpfValido(cpf)) return Optional.of(cpf);
+
+        // aninhado comum (ex.: { person: { cpf: ... } })
+        if (n.has("person")) {
+            cpf = cleanCpf(n.get("person").path("cpf").asText(null));
+            if (isCpfValido(cpf)) return Optional.of(cpf);
+        }
+
+        // às vezes vem dentro de "attributes"/"document"
+        if (n.has("attributes")) {
+            cpf = cleanCpf(n.get("attributes").path("cpf").asText(null));
+            if (isCpfValido(cpf)) return Optional.of(cpf);
+            cpf = cleanCpf(n.get("attributes").path("document").asText(null));
+            if (isCpfValido(cpf)) return Optional.of(cpf);
+        }
+
+        // fallback: tenta "document"
+        cpf = cleanCpf(n.path("document").asText(null));
+        if (isCpfValido(cpf)) return Optional.of(cpf);
+
+        return Optional.empty();
     }
+
+    private String cleanCpf(String v) { return v == null ? null : v.replaceAll("\\D+",""); }
 
     private boolean isCpfValido(String cpf) {
-        if (cpf == null || cpf.length()!=11 || cpf.chars().distinct().count()==1) return false;
+        if (cpf == null || cpf.length() != 11 || cpf.chars().distinct().count()==1) return false;
         int d1=0,d2=0; for (int i=0;i<9;i++){int n=cpf.charAt(i)-'0'; d1+=n*(10-i); d2+=n*(11-i);}
         d1=(d1*10)%11; if (d1==10) d1=0; d2+=d1*2; d2=(d2*10)%11; if (d2==10) d2=0;
         return d1==(cpf.charAt(9)-'0') && d2==(cpf.charAt(10)-'0');
