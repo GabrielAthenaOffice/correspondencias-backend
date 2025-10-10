@@ -17,6 +17,7 @@ import org.springframework.web.client.ResourceAccessException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -67,98 +68,117 @@ public class ConexaClients {
 
 // === ConexaClients ===
 
+    // ConexaClients.java
     public Optional<String> buscarCpfPorCustomerId(Long customerId) {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(conexaApiConfig.getToken());
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-        // 1) tentar relação customer -> persons
-        try {
-            // AJUSTE o path conforme a doc (ex.: /customers/{id}/persons ou /persons?customerId=)
-            String urlByCustomer = conexaApiConfig.getBaseUrl() + "/customers/" + customerId + "/persons";
-            ResponseEntity<String> r = restTemplate.exchange(urlByCustomer, HttpMethod.GET, entity, String.class);
-            Optional<String> cpf = extrairCpfDePayload(r.getBody(), customerId);
-            if (cpf.isPresent()) return cpf;
-        } catch (Exception e) {
-            log.debug("Busca CPF via customer->persons falhou: {}", e.getMessage());
-        }
-
-        // 2) fallback por e-mails do customer
+        // 1) Busca o próprio customer (pra cruzar nome/emails/telefones)
         CustomerResponse cust = buscarEmpresaPorId(customerId);
-        if (cust != null && cust.getEmailsMessage() != null) {
-            for (String email : cust.getEmailsMessage()) {
-                try {
-                    // AJUSTE o path (ex.: /persons?email=)
-                    String urlByEmail = conexaApiConfig.getBaseUrl() + "/persons?email=" +
-                            UriUtils.encode(email, StandardCharsets.UTF_8);
-                    ResponseEntity<String> r = restTemplate.exchange(urlByEmail, HttpMethod.GET, entity, String.class);
-                    Optional<String> cpf = extrairCpfDePayload(r.getBody(), customerId);
-                    if (cpf.isPresent()) return cpf;
-                } catch (Exception ignored) {}
-            }
-        }
 
-        // 3) fallback por telefones do customer
-        if (cust != null && cust.getPhones() != null) {
-            for (String phone : cust.getPhones()) {
-                try {
-                    String digits = phone.replaceAll("\\D+", "");
-                    // AJUSTE o path (ex.: /persons?phone=)
-                    String urlByPhone = conexaApiConfig.getBaseUrl() + "/persons?phone=" + digits;
-                    ResponseEntity<String> r = restTemplate.exchange(urlByPhone, HttpMethod.GET, entity, String.class);
-                    Optional<String> cpf = extrairCpfDePayload(r.getBody(), customerId);
-                    if (cpf.isPresent()) return cpf;
-                } catch (Exception ignored) {}
-            }
+        // 2) Lista pessoas do cliente
+        // AJUSTE O PATH CONFORME A DOC: ex.: "/persons?customerId=" ou "/customers/{id}/persons"
+        String url = conexaApiConfig.getBaseUrl() + "/persons?customerId=" + customerId;
+        try {
+            ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            return extrairCpfDaListaDePessoas(resp.getBody(), customerId, cust);
+        } catch (Exception e) {
+            log.warn("Falha ao consultar persons por customerId {}: {}", customerId, e.getMessage());
+            return Optional.empty();
         }
-
-        return Optional.empty();
     }
 
-    private Optional<String> extrairCpfDePayload(String json, Long expectedCustomerId) {
+    private Optional<String> extrairCpfDaListaDePessoas(String json, Long customerId, CustomerResponse cust) {
         try {
             JsonNode root = new ObjectMapper().readTree(json);
-            JsonNode node = root.has("data") ? root.get("data") : root; // suporta payloads com "data" ou direto
+            JsonNode arr = root.has("data") ? root.get("data") : root; // suporta payloads com "data" ou direto
+            if (!arr.isArray()) return Optional.empty();
 
-            if (node.isObject()) {
-                return pickCpf(node, expectedCustomerId);
-            } else if (node.isArray()) {
-                for (JsonNode n : node) {
-                    Optional<String> cpf = pickCpf(n, expectedCustomerId);
-                    if (cpf.isPresent()) return cpf;
+            // 1) candidatos com customerId e CPF válido
+            List<JsonNode> candidatos = new ArrayList<>();
+            arr.forEach(n -> {
+                if (n.path("customerId").asLong(-1) == customerId) {
+                    String cpf = limparCpf(n.path("cpf").asText(null));
+                    if (isCpfValido(cpf)) candidatos.add(n);
                 }
-            }
+            });
+            if (candidatos.isEmpty()) return Optional.empty();
+
+            // 2) prioriza PF titular
+            Optional<String> titular = candidatos.stream()
+                    .filter(n -> n.path("isIndividualCustomer").asBoolean(false))
+                    .map(n -> limparCpf(n.path("cpf").asText(null)))
+                    .findFirst();
+            if (titular.isPresent()) return titular;
+
+            // 3) senão, sócios
+            Optional<String> socio = candidatos.stream()
+                    .filter(n -> n.path("isCompanyPartner").asBoolean(false))
+                    .map(n -> limparCpf(n.path("cpf").asText(null)))
+                    .findFirst();
+            if (socio.isPresent()) return socio;
+
+            // 4) senão, aproximação por nome/email/telefone do customer
+            String nomeCustomer = cust != null ? normalizar(cust.getName()) : null;
+            Set<String> emails = cust != null && cust.getEmailsMessage()!=null
+                    ? cust.getEmailsMessage().stream().map(this::normalizar).collect(Collectors.toSet())
+                    : Set.of();
+            Set<String> phones = cust != null && cust.getPhones()!=null
+                    ? cust.getPhones().stream().map(p -> p.replaceAll("\\D+","")).collect(Collectors.toSet())
+                    : Set.of();
+
+            return candidatos.stream()
+                    .sorted((a,b) -> Integer.compare(score(a, nomeCustomer, emails, phones),
+                            score(b, nomeCustomer, emails, phones)))
+                    .map(n -> limparCpf(n.path("cpf").asText(null)))
+                    .reduce((first, second) -> second); // pega o maior score (último após sort crescente)
         } catch (Exception e) {
-            log.debug("Falha ao parsear payload de persons: {}", e.getMessage());
+            log.warn("Falha ao parsear persons: {}", e.getMessage());
+            return Optional.empty();
         }
-        return Optional.empty();
     }
 
-    private Optional<String> pickCpf(JsonNode node, Long expectedCustomerId) {
-        String cpf = node.path("cpf").asText(null);
-        if (cpf != null) {
-            cpf = cpf.replaceAll("\\D+", "");
-            boolean cidOk = true;
-            if (node.has("customerId") && node.get("customerId").isNumber()) {
-                cidOk = node.get("customerId").asLong() == expectedCustomerId;
-            }
-            if (cidOk && cpf.length() == 11 && isCpfValido(cpf)) {
-                return Optional.of(cpf);
+    private int score(JsonNode n, String nomeCustomer, Set<String> emails, Set<String> phones) {
+        int s = 0;
+        if (n.path("isCompanyPartner").asBoolean(false)) s += 10;
+        if (nomeCustomer != null && normalizar(n.path("name").asText("")).equals(nomeCustomer)) s += 20;
+
+        // match por email
+        if (!emails.isEmpty() && n.has("emails") && n.get("emails").isArray()) {
+            for (JsonNode e : n.get("emails")) if (emails.contains(normalizar(e.asText()))) { s += 10; break; }
+        }
+        // match por telefone
+        if (!phones.isEmpty()) {
+            String cell = n.path("cellNumber").asText("");
+            String cellDigits = cell.replaceAll("\\D+","");
+            if (!cellDigits.isBlank() && phones.contains(cellDigits)) s += 10;
+            if (n.has("phones") && n.get("phones").isArray()) {
+                for (JsonNode p : n.get("phones")) {
+                    String d = p.asText("").replaceAll("\\D+","");
+                    if (phones.contains(d)) { s += 10; break; }
+                }
             }
         }
-        return Optional.empty();
+        return s;
+    }
+
+    private String limparCpf(String v) { return v == null ? null : v.replaceAll("\\D+",""); }
+
+    private String normalizar(String s) {
+        if (s == null) return null;
+        String t = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "");
+        return t.trim().toLowerCase(Locale.ROOT);
     }
 
     private boolean isCpfValido(String cpf) {
-        if (cpf == null || cpf.length() != 11 || cpf.chars().distinct().count() == 1) return false;
-        int d1 = 0, d2 = 0;
-        for (int i = 0; i < 9; i++) { int n = cpf.charAt(i) - '0'; d1 += n * (10 - i); d2 += n * (11 - i); }
-        d1 = (d1 * 10) % 11; if (d1 == 10) d1 = 0;
-        d2 += d1 * 2; d2 = (d2 * 10) % 11; if (d2 == 10) d2 = 0;
-        return d1 == (cpf.charAt(9) - '0') && d2 == (cpf.charAt(10) - '0');
+        if (cpf == null || cpf.length()!=11 || cpf.chars().distinct().count()==1) return false;
+        int d1=0,d2=0; for (int i=0;i<9;i++){int n=cpf.charAt(i)-'0'; d1+=n*(10-i); d2+=n*(11-i);}
+        d1=(d1*10)%11; if (d1==10) d1=0; d2+=d1*2; d2=(d2*10)%11; if (d2==10) d2=0;
+        return d1==(cpf.charAt(9)-'0') && d2==(cpf.charAt(10)-'0');
     }
-
 
     public CustomerResponse buscarEmpresaPorId(Long id) {
         String url = conexaApiConfig.getBaseUrl() + "/customer/" + id;
