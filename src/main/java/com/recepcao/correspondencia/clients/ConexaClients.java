@@ -87,10 +87,11 @@ public class ConexaClients {
         log.debug("GET persons URI={}", uri);
 
         try {
-            ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-            return extrairCpfDaListaDePessoas(resp.getBody(), customerId, buscarEmpresaPorId(customerId));
+            ResponseEntity<String> resp = restTemplate.exchange(uri, HttpMethod.GET, entity, String.class);
+            CustomerResponse cust = buscarEmpresaPorId(customerId); // para scoring por nome/email/telefone
+            return extrairCpfDaListaDePessoas(resp.getBody(), customerId, cust);
         } catch (HttpClientErrorException e) {
-            log.warn("Falha ao consultar persons por customerId {}: {} - body={}", customerId, e.getStatusCode(), e.getResponseBodyAsString());
+            log.warn("Falha persons por customerId {}: {} body={}", customerId, e.getStatusCode(), e.getResponseBodyAsString());
             return Optional.empty();
         }
     }
