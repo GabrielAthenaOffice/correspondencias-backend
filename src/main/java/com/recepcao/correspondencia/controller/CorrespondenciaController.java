@@ -312,4 +312,11 @@ public class CorrespondenciaController {
         AditivoResponseDTO response = correspondenciaService.solicitarCriacaoAditivo(nomeUnidade, empresa1, dadosFormulario);
         return ResponseEntity.ok(response);
     }
+
+    @GetMapping("/{id}/busca-por-id-cpf")
+    public ResponseEntity<Optional<String>> procurar(@PathVariable Long id) {
+        Optional<String> cpfDoCara = correspondenciaService.buscarCpfPorPersonId(id);
+
+        return new ResponseEntity<>(cpfDoCara, HttpStatus.OK);
+    }
 }

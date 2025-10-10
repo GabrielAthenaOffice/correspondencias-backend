@@ -35,6 +35,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import com.recepcao.correspondencia.dto.CorrespondenciaComEmpresaDTO;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -165,10 +166,12 @@ public class CorrespondenciaService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional
     public Correspondencia processarCorrespondencia(Correspondencia correspondencia) {
-    log.debug("Iniciando processamento de correspondencia para empresa='{}' remetente='{}'", correspondencia.getNomeEmpresaConexa(), correspondencia.getRemetente());
-    List<CustomerResponse> empresasEncontradas = verificarEmpresaConexa(correspondencia.getNomeEmpresaConexa());
-    log.debug("Resultado da busca no Conexa ({} resultados) para '{}'", empresasEncontradas.size(), correspondencia.getNomeEmpresaConexa());
+        log.debug("Iniciando processamento de correspondencia para empresa='{}' remetente='{}'", correspondencia.getNomeEmpresaConexa(), correspondencia.getRemetente());
+        List<CustomerResponse> empresasEncontradas = verificarEmpresaConexa(correspondencia.getNomeEmpresaConexa());
+
+        log.debug("Resultado da busca no Conexa ({} resultados) para '{}'", empresasEncontradas.size(), correspondencia.getNomeEmpresaConexa());
         correspondencia.setDataRecebimento(LocalDate.now());
 
         if (!empresasEncontradas.isEmpty()) {
@@ -182,148 +185,122 @@ public class CorrespondenciaService {
                 log.debug("Customer salvo no banco com id={} name={}", savedCustomer.getId(), savedCustomer.getName());
             }
 
-            if (customer.getLegalPerson() == null || customer.getLegalPerson().getCnpj() == null || customer.getLegalPerson().getCnpj().isEmpty()) {
-                // Empresa sem CNPJ (provavelmente CPF) - exige aditivo contratual
-                correspondencia.setStatusCorresp(StatusCorresp.ANALISE);
-
-                // Verificar se a empresa já existe antes de salvar
-                Optional<Empresa> empresaExistente = empresaRepository.findByNomeEmpresa(customer.getName());
-                Empresa empresaSalva;
-                
-                if (empresaExistente.isEmpty()) {
-                    Empresa novaEmpresa = EmpresaMapper.fromCustomerResponse(customer);
-                    novaEmpresa.setStatusEmpresa(StatusEmpresa.FALTA_ADITIVO);
-                    novaEmpresa.setSituacao(Situacao.CPF);
-                    novaEmpresa.setMensagem("Necessário aditivo contratual para alterar CPF para CNPJ");
-                    empresaSalva = empresaRepository.save(novaEmpresa);
-                    log.debug("Empresa criada (sem CNPJ) id={} nome={}", empresaSalva.getId(), empresaSalva.getNomeEmpresa());
-                } else {
-                    empresaSalva = empresaExistente.get();
-                    log.debug("Empresa já existe (sem CNPJ) id={} nome={}", empresaSalva.getId(), empresaSalva.getNomeEmpresa());
-                }
-
-               emailService.enviarEmailSolicitandoAditivo(
-                        customer.getEmailsMessage() != null ? "gabrielathenaoffice@gmail.com" : null,
-                        customer.getName()
-                );
-
-                historicoService.registrar(
-                        "Empresa",
-                        empresaSalva.getId(),
-                        "Aviso de Aditivo Enviado",
-                        "Enviado e-mail solicitando mudança de CPF para CNPJ."
-                );
-
-
-            } else {
-                // Empresa já possui CNPJ - fluxo normal
-                correspondencia.setStatusCorresp(StatusCorresp.ANALISE);
-
-                // Verificar se a empresa já existe antes de salvar
-                Optional<Empresa> empresaExistente = empresaRepository.findByNomeEmpresa(customer.getName());
-                Empresa empresaSalva;
-                
-                if (empresaExistente.isEmpty()) {
-                    Empresa novaEmpresa = EmpresaMapper.fromCustomerResponse(customer);
-                    empresaSalva = empresaRepository.save(novaEmpresa);
-                    log.debug("Empresa criada id={} nome={}", empresaSalva.getId(), empresaSalva.getNomeEmpresa());
-                } else {
-                    empresaSalva = empresaExistente.get();
-                    log.debug("Empresa já existe id={} nome={}", empresaSalva.getId(), empresaSalva.getNomeEmpresa());
-                }
-
-                /*emailService.enviarEmailAvisoCorrespondencia(
-                        customer.getEmailsMessage() != null ? customer.getEmailsMessage().getFirst() : null,
-                        customer.getName()
-                );*/
-
-                historicoService.registrar(
-                        "Correspondencia",
-                        empresaSalva.getId(),
-                        "Aviso de Correspondência",
-                        "Correspondência informada ao cliente '" + customer.getName() + "'."
-                );
-
-            }
+            return processarCorrespondenciaComEmpresaConexa(correspondencia, customer);
 
             // ABAIXO É O METODO DE PESQUISA FORA DO CONEXA
         } else {
-            // Caso não tenha vínculo no Conexa, verifica se o endereço pertence à Athena
-            // Aqui depois substituir por consulta Assertiva/Leme/Google
-
-
-            if (correspondencia.getNomeEmpresaConexa().isEmpty()) {
-
-                /*// Uso indevido do endereço
-                correspondencia.setStatusCorresp(StatusCorresp.USO_INDEVIDO);
-
-                // Aqui futuramente: gerar alerta interno / protesto
-                emailService.enviarEmailUsoIndevido("gabrielathenaoffice@gmail.com",
-                        correspondencia.getNomeEmpresaConexa()
-                );*/
-
-                Correspondencia salvo = correspondenciaRepository.save(correspondencia);
-
-                historicoService.registrar(
-                        "Correspondencia",
-                        salvo.getId(),
-                        "Recebimento de Correspondência sem nome cadastrado",
-                        "Correspondência recebida através do remetente '" + salvo.getRemetente() + "' mas não houve destino inserido."
-                );
-
-                return salvo;
-
-
-            } else {
-                // Endereço não é da Athena - devolução normal
-                correspondencia.setStatusCorresp(StatusCorresp.DEVOLVIDA);
-
-                // Criar um registro de Empresa básico para que apareça na aba de Empresas
-                try {
-                    // Verifica se já existe empresa com mesmo nome (ignora duplicatas)
-                    Optional<Empresa> existente = empresaRepository.findByNomeEmpresa(correspondencia.getNomeEmpresaConexa());
-                    if (existente.isEmpty()) {
-                        Empresa novaEmpresa = new Empresa();
-                        novaEmpresa.setNomeEmpresa(correspondencia.getNomeEmpresaConexa());
-                        novaEmpresa.setCnpj(null);
-                        novaEmpresa.setUnidade(null);
-                        novaEmpresa.setEmail(null);
-                        novaEmpresa.setTelefone(null);
-                        novaEmpresa.setEndereco(null);
-                        novaEmpresa.setStatusEmpresa(StatusEmpresa.AGUARDANDO);
-                        // Não sabemos se é CPF ou CNPJ; marcar como CNPJ por padrão (pode ser ajustado manualmente)
-                        novaEmpresa.setSituacao(Situacao.CNPJ);
-                        novaEmpresa.setMensagem(null);
-
-                        Empresa empresaSalva = empresaRepository.save(novaEmpresa);
-                        log.debug("Empresa criada a partir de correspondencia (fallback) id={} nome={}", empresaSalva.getId(), empresaSalva.getNomeEmpresa());
-
-                        historicoService.registrar(
-                                "Empresa",
-                                empresaSalva.getId(),
-                                "Empresa criada via correspondencia",
-                                "Empresa criada automaticamente a partir de correspondência com nome '" + empresaSalva.getNomeEmpresa() + "'."
-                        );
-                    } else {
-                        log.debug("Empresa com o nome '{}' já existe, pulando criação fallback.", correspondencia.getNomeEmpresaConexa());
-                    }
-                } catch (Exception e) {
-                    log.error("Erro ao criar empresa fallback: {}", e.getMessage());
-                }
-
-                historicoService.registrar(
-                        "Correspondencia",
-                        correspondencia.getId(),
-                        "Sem uso de quaisquer endereço",
-                        "Correspondência recebida da empresa '" + correspondencia.getNomeEmpresaConexa() + "' que possa estar utilizando endereço da Athena."
-                );
-            }
-
-
+            return processarCorrespondenciaForaDoConexa(correspondencia);
         }
+    }
+
+    /**
+     * A GENTE ATÉ TENTA ARRUMAR. VAMOS VER SE FUNCIONA.
+     */
+    private Correspondencia processarCorrespondenciaComEmpresaConexa(Correspondencia correspondencia, CustomerResponse customer) {
+
+        if (isPessoaFisica(customer)) {
+            return tratarEmpresaPessoaFisica(correspondencia, customer);
+        } else {
+            return tratarEmpresaPessoaJuridica(correspondencia, customer);
+        }
+    }
+
+    private Correspondencia tratarEmpresaPessoaFisica(Correspondencia correspondencia, CustomerResponse customer) {
+        correspondencia.setStatusCorresp(StatusCorresp.ANALISE);
+
+        Empresa empresa = empresaRepository.findByNomeEmpresa(customer.getName())
+                .orElseGet(() -> criarEmpresaPessoaFisica(customer));
+
+        log.debug("Empresa CPF tratada: id={} nome={}", empresa.getId(), empresa.getNomeEmpresa());
+
+        // E-mail será configurado futuramente
+        historicoService.registrar(
+                "Empresa",
+                empresa.getId(),
+                "Aviso de Aditivo Enviado",
+                "Enviado e-mail solicitando mudança de CPF para CNPJ."
+        );
 
         return correspondenciaRepository.save(correspondencia);
     }
+
+    private Empresa criarEmpresaPessoaFisica(CustomerResponse customer) {
+        Optional<String> cpfPessoaFisica = buscarCpfPorPersonId(customer.getCustomerId());
+        Empresa nova = EmpresaMapper.fromCustomerResponse(customer);
+
+        nova.setStatusEmpresa(StatusEmpresa.FALTA_ADITIVO);
+        nova.setCnpj(cpfPessoaFisica.get());
+        nova.setSituacao(Situacao.CPF);
+        nova.setMensagem("Necessário aditivo contratual para alterar CPF para CNPJ");
+        return empresaRepository.save(nova);
+    }
+
+    private Correspondencia tratarEmpresaPessoaJuridica(Correspondencia correspondencia, CustomerResponse customer) {
+        correspondencia.setStatusCorresp(StatusCorresp.ANALISE);
+
+        Empresa empresa = empresaRepository.findByNomeEmpresa(customer.getName())
+                .orElseGet(() -> criarEmpresaPessoaJuridica(customer));
+
+        historicoService.registrar(
+                "Correspondencia",
+                empresa.getId(),
+                "Aviso de Correspondência",
+                "Correspondência informada ao cliente '" + customer.getName() + "'."
+        );
+
+        return correspondenciaRepository.save(correspondencia);
+    }
+
+    private Empresa criarEmpresaPessoaJuridica(CustomerResponse customer) {
+        Empresa nova = EmpresaMapper.fromCustomerResponse(customer);
+
+        return empresaRepository.save(nova);
+    }
+
+    private Correspondencia processarCorrespondenciaForaDoConexa(Correspondencia correspondencia) {
+        if (correspondencia.getNomeEmpresaConexa() == null || correspondencia.getNomeEmpresaConexa().isBlank()) {
+            return tratarCorrespondenciaSemNome(correspondencia);
+        } else {
+            return tratarCorrespondenciaDevolvida(correspondencia);
+        }
+    }
+
+    private Correspondencia tratarCorrespondenciaSemNome(Correspondencia correspondencia) {
+        Correspondencia salvo = correspondenciaRepository.save(correspondencia);
+        historicoService.registrar(
+                "Correspondencia",
+                salvo.getId(),
+                "Recebimento sem nome cadastrado",
+                "Correspondência recebida do remetente '" + salvo.getRemetente() + "' sem destino definido."
+        );
+        return salvo;
+    }
+
+    private Correspondencia tratarCorrespondenciaDevolvida(Correspondencia correspondencia) {
+        correspondencia.setStatusCorresp(StatusCorresp.DEVOLVIDA);
+
+        empresaRepository.findByNomeEmpresa(correspondencia.getNomeEmpresaConexa())
+                .orElseGet(() -> criarEmpresaFallback(correspondencia));
+
+        historicoService.registrar(
+                "Correspondencia",
+                correspondencia.getId(),
+                "Sem uso de quaisquer endereço",
+                "Correspondência recebida da empresa '" + correspondencia.getNomeEmpresaConexa() + "'."
+        );
+
+        return correspondenciaRepository.save(correspondencia);
+    }
+
+    private Empresa criarEmpresaFallback(Correspondencia correspondencia) {
+        Empresa nova = new Empresa();
+        nova.setNomeEmpresa(correspondencia.getNomeEmpresaConexa());
+        nova.setStatusEmpresa(StatusEmpresa.AGUARDANDO);
+        nova.setSituacao(Situacao.CNPJ);
+        return empresaRepository.save(nova);
+    }
+
+
 
     /**
      * Busca o CPF de um cliente (pessoa física) no Conexa a partir do personId.
@@ -347,6 +324,12 @@ public class CorrespondenciaService {
             log.error("Erro ao buscar CPF para personId {}: {}", personId, e.getMessage(), e);
             return Optional.empty();
         }
+    }
+
+    private boolean isPessoaFisica(CustomerResponse customer) {
+        return customer.getLegalPerson() == null
+                || customer.getLegalPerson().getCnpj() == null
+                || customer.getLegalPerson().getCnpj().isEmpty();
     }
 
 
@@ -520,5 +503,7 @@ public class CorrespondenciaService {
 
     return atualizada;
     }
+
+
 
 }
