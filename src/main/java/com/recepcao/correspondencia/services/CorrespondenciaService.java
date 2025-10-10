@@ -225,7 +225,7 @@ public class CorrespondenciaService {
     }
 
     private Empresa criarEmpresaPessoaFisica(CustomerResponse customer) {
-        Optional<String> cpfPessoaFisica = buscarCpfPorPersonId(customer.getCustomerId());
+        Optional<String> cpfPessoaFisica = buscarCpfPorCustomerId(customer.getCustomerId());
         Empresa nova = EmpresaMapper.fromCustomerResponse(customer);
 
         nova.setStatusEmpresa(StatusEmpresa.FALTA_ADITIVO);
@@ -306,25 +306,10 @@ public class CorrespondenciaService {
      * Busca o CPF de um cliente (pessoa física) no Conexa a partir do personId.
      * Retorna Optional.empty() se não encontrar.
      */
-    public Optional<String> buscarCpfPorPersonId(Long personId) {
-        log.info("Buscando CPF para personId={} no Conexa", personId);
-        try {
-            Optional<String> cpfOpt = conexaClient.buscarCpfPorPersonId(personId);
-
-            if (cpfOpt.isPresent()) {
-                String cpf = cpfOpt.get();
-                log.info("CPF encontrado para personId {}: {}", personId, cpf);
-                return Optional.of(cpf);
-            } else {
-                log.warn("Nenhum CPF encontrado para personId {}", personId);
-                return Optional.empty();
-            }
-
-        } catch (Exception e) {
-            log.error("Erro ao buscar CPF para personId {}: {}", personId, e.getMessage(), e);
-            return Optional.empty();
-        }
+    public Optional<String> buscarCpfPorCustomerId(Long customerId) {
+        return conexaClient.buscarCpfPorCustomerId(customerId);
     }
+
 
     private boolean isPessoaFisica(CustomerResponse customer) {
         return customer.getLegalPerson() == null

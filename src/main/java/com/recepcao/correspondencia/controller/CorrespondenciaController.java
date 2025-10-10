@@ -315,7 +315,7 @@ public class CorrespondenciaController {
 
     @GetMapping("/{id}/busca-por-id-cpf")
     public ResponseEntity<Optional<String>> procurar(@PathVariable Long id) {
-        Optional<String> cpfDoCara = correspondenciaService.buscarCpfPorPersonId(id);
+        Optional<String> cpfDoCara = correspondenciaService.buscarCpfPorCustomerId(id);
 
         return new ResponseEntity<>(cpfDoCara, HttpStatus.OK);
     }
