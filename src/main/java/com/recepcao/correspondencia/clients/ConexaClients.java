@@ -4,6 +4,7 @@ package com.recepcao.correspondencia.clients;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.recepcao.correspondencia.config.ConexaApiConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.util.UriUtils;
 import com.recepcao.correspondencia.dto.responses.ConexaCustomerListResponse;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
@@ -15,6 +16,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -74,10 +76,15 @@ public class ConexaClients {
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-        // Conexa quer array: customerId[]=5977 (pode repetir p/ vários)
-        String url = conexaApiConfig.getBaseUrl()
-                + "/persons?customerId[]=" + customerId
-                + "&isIndividualCustomer=true"; // opcional: já filtra PF
+        String base = conexaApiConfig.getBaseUrl() + "/persons";
+
+        // Somente o array de customerId. Nada de isIndividualCustomer no query.
+        URI uri = UriComponentsBuilder.fromHttpUrl(base)
+                .query("customerId[]=" + customerId) // mantém "[]"
+                .build(true)                          // NÃO re-encode os colchetes
+                .toUri();
+
+        log.debug("GET persons URI={}", uri);
 
         try {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
