@@ -4,6 +4,8 @@ package com.recepcao.correspondencia.clients;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.recepcao.correspondencia.config.ConexaApiConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.util.UriUtils;
 import com.recepcao.correspondencia.dto.responses.ConexaCustomerListResponse;
@@ -71,30 +73,78 @@ public class ConexaClients {
 // === ConexaClients ===
 
     public Optional<String> buscarCpfPorCustomerId(Long customerId) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(conexaApiConfig.getToken());
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        // 1) tenta GET sem colchete (alguns backends aceitam repetido como array)
+        Optional<String> viaGet = tentarGetPersonsSemColchete(customerId);
+        if (viaGet.isPresent()) return viaGet;
 
-        String base = conexaApiConfig.getBaseUrl() + "/persons";
+        // 2) POST JSON com array no corpo (mais confiável)
+        Optional<String> viaPostJson = tentarPostPersonsJsonArray(customerId);
+        if (viaPostJson.isPresent()) return viaPostJson;
 
-        // Somente o array de customerId. Nada de isIndividualCustomer no query.
-        URI uri = UriComponentsBuilder.fromHttpUrl(base)
-                .query("customerId[]=" + customerId) // mantém "[]"
-                .build(true)                          // NÃO re-encode os colchetes
-                .toUri();
+        // 3) (fallback) POST form-url-encoded com customerId[0] no body
+        return tentarPostPersonsFormArray(customerId);
+    }
 
-        log.debug("GET persons URI={}", uri);
-
+    private Optional<String> tentarGetPersonsSemColchete(Long customerId) {
         try {
-            ResponseEntity<String> resp = restTemplate.exchange(uri, HttpMethod.GET, entity, String.class);
-            CustomerResponse cust = buscarEmpresaPorId(customerId); // para scoring por nome/email/telefone
-            return extrairCpfDaListaDePessoas(resp.getBody(), customerId, cust);
+            HttpHeaders headers = stdHeaders();
+            URI uri = UriComponentsBuilder
+                    .fromHttpUrl(conexaApiConfig.getBaseUrl() + "/persons")
+                    .queryParam("customerId", customerId) // sem []
+                    .build(true).toUri();
+            ResponseEntity<String> r = restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            return extrairCpfDaListaDePessoas(r.getBody(), customerId, buscarEmpresaPorId(customerId));
         } catch (HttpClientErrorException e) {
-            log.warn("Falha persons por customerId {}: {} body={}", customerId, e.getStatusCode(), e.getResponseBodyAsString());
+            // se reclamar que "must be array", seguimos pro POST
             return Optional.empty();
         }
     }
+
+    private Optional<String> tentarPostPersonsJsonArray(Long customerId) {
+        try {
+            HttpHeaders headers = stdHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> body = Map.of("customerId", List.of(customerId));
+            ResponseEntity<String> r = restTemplate.exchange(
+                    conexaApiConfig.getBaseUrl() + "/persons",
+                    HttpMethod.POST,
+                    new HttpEntity<>(body, headers),
+                    String.class
+            );
+            return extrairCpfDaListaDePessoas(r.getBody(), customerId, buscarEmpresaPorId(customerId));
+        } catch (HttpClientErrorException e) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<String> tentarPostPersonsFormArray(Long customerId) {
+        try {
+            HttpHeaders headers = stdHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("customerId[0]", String.valueOf(customerId)); // array no corpo (não na URL)
+
+            ResponseEntity<String> r = restTemplate.exchange(
+                    conexaApiConfig.getBaseUrl() + "/persons",
+                    HttpMethod.POST,
+                    new HttpEntity<>(form, headers),
+                    String.class
+            );
+            return extrairCpfDaListaDePessoas(r.getBody(), customerId, buscarEmpresaPorId(customerId));
+        } catch (HttpClientErrorException e) {
+            return Optional.empty();
+        }
+    }
+
+    private HttpHeaders stdHeaders() {
+        HttpHeaders h = new HttpHeaders();
+        h.setBearerAuth(conexaApiConfig.getToken());
+        h.setAccept(List.of(MediaType.APPLICATION_JSON));
+        return h;
+    }
+
 
     private Optional<String> extrairCpfDaListaDePessoas(String json, Long customerId, CustomerResponse cust) {
         try {
