@@ -511,7 +511,7 @@ public class CorrespondenciaService {
 
         historicoService.registrar(
                 "Correspondencia",
-                empresa.get().getId(),
+                empresa.getId(),
                 "Aviso enviado",
                 "Aviso de correspondência enviado para '" + emailServiceDTO.getNomeEmpresaConexa() + "' (" + emailServiceDTO.getEmailDestino() + ")."
         );
