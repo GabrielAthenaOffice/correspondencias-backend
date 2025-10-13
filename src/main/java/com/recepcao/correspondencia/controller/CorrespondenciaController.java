@@ -338,7 +338,7 @@ public class CorrespondenciaController {
     // Em algum endpoint de debug só pra testar conectividade
     @GetMapping("/_diag/smtp")
     public ResponseEntity<String> diagSmtp() {
-        String host = "smtp.hostinger.com";
+        String host = "smtp.hostinger.com.br";
         int[] ports = {465, 587};
         StringBuilder sb = new StringBuilder();
         for (int p : ports) {
@@ -364,8 +364,8 @@ public class CorrespondenciaController {
             props.put("mail.smtp.timeout", "30000");
             props.put("mail.debug", "true");
 
-            final String user = System.getenv("adm@athenaoffice.com.br"); // ou @Value
-            final String pass = System.getenv("!ZC,wEanye*e3L+F");
+            final String user = System.getenv("MAIL_USERNAME"); // ou @Value
+            final String pass = System.getenv("MAIL_PASSWORD");
 
             var session = jakarta.mail.Session.getInstance(props, new jakarta.mail.Authenticator() {
                 @Override protected jakarta.mail.PasswordAuthentication getPasswordAuthentication() {
