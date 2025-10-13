@@ -33,10 +33,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 import com.recepcao.correspondencia.dto.CorrespondenciaComEmpresaDTO;
 import org.springframework.transaction.annotation.Transactional;
@@ -526,10 +523,17 @@ public class CorrespondenciaService {
                 correspondencias   // List<Correspondencia>
         );
 
+        // 3) data mais recente (evita NPE do getLast)
+        LocalDate dataMaisRecente = correspondencias.stream()
+                .map(Correspondencia::getDataRecebimento)
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElse(LocalDate.now());
+
         EmailResponseRecord emailResponseRecord = new EmailResponseRecord(
                 "Enviado",
                 emailServiceDTO.getNomeEmpresaConexa(),
-                correspondencias.getLast().getDataRecebimento()
+                dataMaisRecente
                 );
 
         return emailResponseRecord;

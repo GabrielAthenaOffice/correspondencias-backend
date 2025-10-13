@@ -4,6 +4,7 @@ import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.CorrespondenciaComEmpresaDTO;
 import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
 import com.recepcao.correspondencia.dto.contracts.EmailServiceDTO;
+import com.recepcao.correspondencia.dto.record.EmailResponseRecord;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.Correspondencia;
 import com.recepcao.correspondencia.entities.Empresa;
@@ -327,10 +328,11 @@ public class CorrespondenciaController {
     }
 
     // CorrespondenciaController
-    @PostMapping("/correspondencias/{id}/enviar-aviso")
-    public ResponseEntity<Void> enviarAviso(@RequestBody EmailServiceDTO emailServiceDTO) {
-        correspondenciaService.envioEmailCorrespondencia(emailServiceDTO);
-        return ResponseEntity.noContent().build();
+    @PostMapping("/enviar-aviso")
+    public ResponseEntity<EmailResponseRecord> enviarAviso(@RequestBody EmailServiceDTO dto) {
+        EmailResponseRecord resp = correspondenciaService.envioEmailCorrespondencia(dto);
+        return ResponseEntity.ok(resp);
     }
+
 
 }
