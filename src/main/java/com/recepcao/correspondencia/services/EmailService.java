@@ -3,6 +3,7 @@ package com.recepcao.correspondencia.services;
 import com.recepcao.correspondencia.entities.Correspondencia;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -22,7 +23,8 @@ public class EmailService {
     private final JavaMailSender mailSender;
 
     // ajuste se quiser fixar um remetente específico
-    private static final String FROM = System.getenv().getOrDefault("MAIL_FROM", "");
+    @Value("${spring.mail.username}")
+    private String defaultFrom;
 
     private static final ZoneId ZONE = ZoneId.of("America/Recife");
     private static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
@@ -46,8 +48,8 @@ public class EmailService {
             MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
 
             helper.setTo(para);
-            if (FROM != null && !FROM.isBlank()) {
-                helper.setFrom(FROM, "ATHENA OFFICE");
+            if (defaultFrom != null && !defaultFrom.isBlank()) {
+                helper.setFrom(defaultFrom, "ATHENA OFFICE");
             }
             helper.setSubject(assunto);
             helper.setText(corpo, false); // texto puro; mude para true + HTML se quiser
