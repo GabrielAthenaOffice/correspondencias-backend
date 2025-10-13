@@ -506,8 +506,8 @@ public class CorrespondenciaService {
     public EmailResponseRecord envioEmailCorrespondencia(EmailServiceDTO emailServiceDTO) {
         List<Correspondencia> correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(emailServiceDTO.getNomeEmpresaConexa());
 
-        Optional<Empresa> empresa = Optional.ofNullable(empresaRepository.findByNomeEmpresa(emailServiceDTO.getNomeEmpresaConexa())
-                .orElseThrow(() -> new APIExceptions("Não foi possível localizar empresa no banco de dados")));
+        Empresa empresa = empresaRepository.findByNomeEmpresa(emailServiceDTO.getNomeEmpresaConexa())
+                .orElseThrow(() -> new APIExceptions("Não foi possível localizar empresa no banco de dados"));
 
         historicoService.registrar(
                 "Correspondencia",
