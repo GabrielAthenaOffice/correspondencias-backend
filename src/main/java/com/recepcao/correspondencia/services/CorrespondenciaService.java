@@ -4,7 +4,9 @@ import com.recepcao.correspondencia.agencias.Unidade;
 import com.recepcao.correspondencia.clients.ConexaClients;
 import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
 import com.recepcao.correspondencia.config.APIExceptions;
+import com.recepcao.correspondencia.dto.contracts.EmailServiceDTO;
 import com.recepcao.correspondencia.dto.record.ConexaContractResponse;
+import com.recepcao.correspondencia.dto.record.EmailResponseRecord;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.*;
 import com.recepcao.correspondencia.feign.*;
@@ -502,6 +504,35 @@ public class CorrespondenciaService {
                 "startDate",  c.startDate(),
                 "inadimplente", inadimplente
         );
+    }
+
+    public EmailResponseRecord envioEmailCorrespondencia(EmailServiceDTO emailServiceDTO) {
+        List<Correspondencia> correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(emailServiceDTO.getNomeEmpresaConexa());
+
+        Optional<Empresa> empresa = Optional.ofNullable(empresaRepository.findByNomeEmpresa(emailServiceDTO.getNomeEmpresaConexa())
+                .orElseThrow(() -> new APIExceptions("Não foi possível localizar empresa no banco de dados")));
+
+        historicoService.registrar(
+                "Correspondencia",
+                empresa.get().getId(),
+                "Aviso enviado",
+                "Aviso de correspondência enviado para '" + emailServiceDTO.getNomeEmpresaConexa() + "' (" + emailServiceDTO.getEmailDestino() + ")."
+        );
+
+        // supondo que você já tem a lista de correspondências do cliente
+        emailService.enviarAvisoCorrespondencias(
+                emailServiceDTO.getEmailDestino(),              // destino (pode vir do Customer/Empresa)
+                emailServiceDTO.getNomeEmpresaConexa(),            // nome do cliente
+                correspondencias   // List<Correspondencia>
+        );
+
+        EmailResponseRecord emailResponseRecord = new EmailResponseRecord(
+                "Enviado",
+                emailServiceDTO.getNomeEmpresaConexa(),
+                correspondencias.getLast().getDataRecebimento()
+                );
+
+        return emailResponseRecord;
     }
 
 

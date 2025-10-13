@@ -3,6 +3,7 @@ package com.recepcao.correspondencia.controller;
 import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.CorrespondenciaComEmpresaDTO;
 import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
+import com.recepcao.correspondencia.dto.contracts.EmailServiceDTO;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.Correspondencia;
 import com.recepcao.correspondencia.entities.Empresa;
@@ -323,6 +324,13 @@ public class CorrespondenciaController {
     @GetMapping("/contratos/{id}/analise")
     public ResponseEntity<?> analiseContrato(@PathVariable Long id) {
         return ResponseEntity.ok(correspondenciaService.analisarContrato(id));
+    }
+
+    // CorrespondenciaController
+    @PostMapping("/correspondencias/{id}/enviar-aviso")
+    public ResponseEntity<Void> enviarAviso(@RequestBody EmailServiceDTO emailServiceDTO) {
+        correspondenciaService.envioEmailCorrespondencia(emailServiceDTO);
+        return ResponseEntity.noContent().build();
     }
 
 }
