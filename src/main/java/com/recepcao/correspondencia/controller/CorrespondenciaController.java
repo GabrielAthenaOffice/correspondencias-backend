@@ -319,4 +319,10 @@ public class CorrespondenciaController {
 
         return new ResponseEntity<>(cpfDoCara, HttpStatus.OK);
     }
+
+    @GetMapping("/contratos/{id}/analise")
+    public ResponseEntity<?> analiseContrato(@PathVariable Long id) {
+        return ResponseEntity.ok(correspondenciaService.analisarContrato(id));
+    }
+
 }

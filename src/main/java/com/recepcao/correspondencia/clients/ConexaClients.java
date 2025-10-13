@@ -4,6 +4,7 @@ package com.recepcao.correspondencia.clients;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.recepcao.correspondencia.config.ConexaApiConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.recepcao.correspondencia.dto.record.ConexaContractResponse;
 import com.recepcao.correspondencia.dto.responses.ConexaCustomerListResponse;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import lombok.RequiredArgsConstructor;
@@ -216,5 +217,137 @@ public class ConexaClients {
             return null;
         }
     }
+
+    public ConexaContractResponse buscarContratoPorId(Long id) {
+        String url = conexaApiConfig.getBaseUrl() + "/contract/" + id;
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(conexaApiConfig.getToken());
+            headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+            log.info("Buscando contrato no Conexa com ID: {}", id);
+
+            ResponseEntity<ConexaContractResponse> response = restTemplate.exchange(
+                    url, HttpMethod.GET, entity, ConexaContractResponse.class
+            );
+
+            if (response.getBody() != null) {
+                log.info("Contrato encontrado no Conexa: {}", response.getBody().contractId());
+                return response.getBody();
+            } else {
+                log.warn("Contrato não encontrado no Conexa com ID: {}", id);
+                return null;
+            }
+
+        } catch (HttpClientErrorException e) {
+            log.error("Erro HTTP ao buscar contrato no Conexa: {} - Status: {}", e.getMessage(), e.getStatusCode());
+            return null;
+        } catch (ResourceAccessException e) {
+            log.error("Erro de conexão ao buscar contrato no Conexa: {}", e.getMessage());
+            return null;
+        } catch (Exception e) {
+            log.error("Erro inesperado ao buscar contrato no Conexa: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Heurística: inadimplente = existe título/venda em aberto com dueDate < hoje.
+     * Tenta endpoints comuns e faz parse genérico.
+     */
+    public boolean estaInadimplente(Long contractId) {
+        ConexaContractResponse c = buscarContratoPorId(contractId);
+        if (c == null) return false;
+
+        Long customerId = c.customerId();
+
+        // tente na ordem (ajuste se souber o certo)
+        String base = conexaApiConfig.getBaseUrl();
+        String[] urls = new String[] {
+                base + "/titles?contractId=" + contractId,
+                base + "/titles?customerId=" + customerId,
+                base + "/sales?contractId=" + contractId,
+                base + "/sales?customerId=" + customerId
+        };
+
+        for (String url : urls) {
+            Boolean r = checarOverdueGenerico(url);
+            if (r != null) return r; // se achou endpoint válido, já decide
+        }
+        return false; // não achou nada útil
+    }
+
+    private Boolean checarOverdueGenerico(String url) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(conexaApiConfig.getToken());
+            headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            String body = resp.getBody();
+            if (body == null || body.isBlank()) return false;
+
+            return anyOverdue(body);
+        } catch (HttpClientErrorException e) {
+            // 404/400/etc -> endpoint não existe/param inválido; seguimos para o próximo
+            return null;
+        } catch (Exception e) {
+            log.warn("Falha ao consultar '{}': {}", url, e.getMessage());
+            return null;
+        }
+    }
+
+    private Boolean anyOverdue(String json) {
+        try {
+            var om = new com.fasterxml.jackson.databind.ObjectMapper();
+            var root = om.readTree(json);
+            var node = root;
+            if (root.has("data")) node = root.get("data");
+            if (node.has("items")) node = node.get("items");
+            if (node.has("results")) node = node.get("results");
+            if (!node.isArray()) {
+                var arr = om.createArrayNode();
+                arr.add(node);
+                node = arr;
+            }
+
+            java.time.LocalDate hoje = java.time.LocalDate.now();
+
+            for (var n : node) {
+                // campos possíveis:
+                String status = n.path("status").asText("");
+                String paidAt = n.path("paidAt").asText(null);
+                String dueRaw = firstNonNull(
+                        n.path("dueDate").asText(null),
+                        n.path("expirationDate").asText(null),
+                        n.path("due_day").asText(null) // raros
+                );
+                if (dueRaw == null || dueRaw.isBlank()) continue;
+
+                java.time.LocalDate due;
+                try { due = java.time.LocalDate.parse(dueRaw); }
+                catch (Exception e) { continue; } // formatação diferente? ignora
+
+                boolean emAberto = !"PAID".equalsIgnoreCase(status)
+                        && !"QUITADO".equalsIgnoreCase(status)
+                        && (paidAt == null || paidAt.isBlank());
+
+                if (emAberto && due.isBefore(hoje)) return true;
+            }
+            return false;
+        } catch (Exception e) {
+            log.warn("Parse financeiro genérico falhou: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private String firstNonNull(String... vs) {
+        for (String v : vs) if (v != null && !v.isBlank()) return v;
+        return null;
+    }
+
 
 }

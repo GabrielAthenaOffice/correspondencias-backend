@@ -4,6 +4,7 @@ import com.recepcao.correspondencia.agencias.Unidade;
 import com.recepcao.correspondencia.clients.ConexaClients;
 import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
 import com.recepcao.correspondencia.config.APIExceptions;
+import com.recepcao.correspondencia.dto.record.ConexaContractResponse;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.*;
 import com.recepcao.correspondencia.feign.*;
@@ -32,6 +33,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import com.recepcao.correspondencia.dto.CorrespondenciaComEmpresaDTO;
@@ -489,6 +491,18 @@ public class CorrespondenciaService {
     return atualizada;
     }
 
+    public Map<String, Object> analisarContrato(Long contractId) {
+        ConexaContractResponse c = conexaClient.buscarContratoPorId(contractId);
+        if (c == null) throw new APIExceptions("Contrato não encontrado");
+
+        boolean inadimplente = conexaClient.estaInadimplente(contractId);
+
+        return Map.of(
+                "contractId", c.contractId(),
+                "startDate",  c.startDate(),
+                "inadimplente", inadimplente
+        );
+    }
 
 
 }
