@@ -337,22 +337,57 @@ public class CorrespondenciaController {
 
     // Em algum endpoint de debug só pra testar conectividade
     @GetMapping("/_diag/smtp")
-    public ResponseEntity<String> diagSmtp(
-            @Value("${spring.mail.host}") String host,
-            @Value("${spring.mail.port}") int port) {
-        try {
-            var addrs = java.net.InetAddress.getAllByName(host);
-            String ips = java.util.Arrays.stream(addrs)
-                    .map(java.net.InetAddress::getHostAddress)
-                    .reduce((a,b)->a+", "+b).orElse("?");
+    public ResponseEntity<String> diagSmtp() {
+        String host = "smtp.hostinger.com";
+        int[] ports = {465, 587};
+        StringBuilder sb = new StringBuilder();
+        for (int p : ports) {
             try (var s = new java.net.Socket()) {
-                s.connect(new java.net.InetSocketAddress(host, port), 10000);
+                s.connect(new java.net.InetSocketAddress(host, p), 10000);
+                sb.append("OK conectou em ").append(host).append(":").append(p).append("\n");
+            } catch (Exception e) {
+                sb.append("FALHOU conectar em ").append(host).append(":").append(p).append(" -> ").append(e).append("\n");
             }
-            return ResponseEntity.ok("OK conectou em " + host + ":" + port + " (IPs: " + ips + ")");
+        }
+        return ResponseEntity.ok(sb.toString());
+    }
+
+    @GetMapping("/_diag/send")
+    public ResponseEntity<String> sendRaw() {
+        try {
+            var props = new java.util.Properties();
+            props.put("mail.smtp.host", "smtp.hostinger.com");
+            props.put("mail.smtp.port", "465");
+            props.put("mail.smtp.ssl.enable", "true");
+            props.put("mail.smtp.auth", "true");
+            props.put("mail.smtp.connectiontimeout", "30000");
+            props.put("mail.smtp.timeout", "30000");
+            props.put("mail.debug", "true");
+
+            final String user = System.getenv("MAIL_USERNAME"); // ou @Value
+            final String pass = System.getenv("MAIL_PASSWORD");
+
+            var session = jakarta.mail.Session.getInstance(props, new jakarta.mail.Authenticator() {
+                @Override protected jakarta.mail.PasswordAuthentication getPasswordAuthentication() {
+                    return new jakarta.mail.PasswordAuthentication(user, pass);
+                }
+            });
+
+            var msg = new jakarta.mail.internet.MimeMessage(session);
+            msg.setFrom(new jakarta.mail.internet.InternetAddress(user));
+            msg.setRecipients(jakarta.mail.Message.RecipientType.TO,
+                    jakarta.mail.internet.InternetAddress.parse("gabrielathenaoffice@gmail.com"));
+            msg.setSubject("Teste SMTP Hostinger");
+            msg.setText("Funcionou.");
+
+            jakarta.mail.Transport.send(msg);
+            return ResponseEntity.ok("Enviado com sucesso");
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("FALHA conectar em " + host + ":" + port + " -> " + e);
+            return ResponseEntity.status(500).body("Falha no envio: " + e);
         }
     }
+
+
 
 
 
