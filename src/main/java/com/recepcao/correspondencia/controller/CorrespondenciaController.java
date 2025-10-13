@@ -17,6 +17,7 @@ import com.recepcao.correspondencia.services.arquivos.StorageService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -333,6 +334,26 @@ public class CorrespondenciaController {
         EmailResponseRecord resp = correspondenciaService.envioEmailCorrespondencia(dto);
         return ResponseEntity.ok(resp);
     }
+
+    // Em algum endpoint de debug só pra testar conectividade
+    @GetMapping("/_diag/smtp")
+    public ResponseEntity<String> diagSmtp(
+            @Value("${spring.mail.host}") String host,
+            @Value("${spring.mail.port}") int port) {
+        try {
+            var addrs = java.net.InetAddress.getAllByName(host);
+            String ips = java.util.Arrays.stream(addrs)
+                    .map(java.net.InetAddress::getHostAddress)
+                    .reduce((a,b)->a+", "+b).orElse("?");
+            try (var s = new java.net.Socket()) {
+                s.connect(new java.net.InetSocketAddress(host, port), 10000);
+            }
+            return ResponseEntity.ok("OK conectou em " + host + ":" + port + " (IPs: " + ips + ")");
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("FALHA conectar em " + host + ":" + port + " -> " + e);
+        }
+    }
+
 
 
 }
