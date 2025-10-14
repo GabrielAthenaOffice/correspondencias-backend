@@ -356,8 +356,8 @@ public class CorrespondenciaController {
     public ResponseEntity<String> sendRaw() {
         try {
             var props = new java.util.Properties();
-            props.put("mail.smtp.host", "smtp.hostinger.com");
-            props.put("mail.smtp.port", "465");
+            props.put("mail.smtp.host", "smtp.hostinger.com.br");
+            props.put("mail.smtp.port", "587");
             props.put("mail.smtp.ssl.enable", "true");
             props.put("mail.smtp.auth", "true");
             props.put("mail.smtp.connectiontimeout", "30000");
