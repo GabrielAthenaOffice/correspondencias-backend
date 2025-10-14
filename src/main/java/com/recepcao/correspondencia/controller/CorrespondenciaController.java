@@ -364,8 +364,8 @@ public class CorrespondenciaController {
             props.put("mail.smtp.timeout", "30000");
             props.put("mail.debug", "true");
 
-            final String user = System.getenv("MAIL_USERNAME"); // ou @Value
-            final String pass = System.getenv("MAIL_PASSWORD");
+            final String user = "adm@athenaoffice.com.br";
+            final String pass = "!ZC,wEanye*e3L+F";
 
             var session = jakarta.mail.Session.getInstance(props, new jakarta.mail.Authenticator() {
                 @Override protected jakarta.mail.PasswordAuthentication getPasswordAuthentication() {
