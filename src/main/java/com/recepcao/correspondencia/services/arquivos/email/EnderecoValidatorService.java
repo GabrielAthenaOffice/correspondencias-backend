@@ -1,4 +1,4 @@
-package com.recepcao.correspondencia.services.arquivos;
+package com.recepcao.correspondencia.services.arquivos.email;
 
 import org.springframework.stereotype.Service;
 

@@ -11,13 +11,13 @@ import com.recepcao.correspondencia.entities.Empresa;
 import com.recepcao.correspondencia.feign.AditivoRequestDTO;
 import com.recepcao.correspondencia.feign.AditivoResponseDTO;
 import com.recepcao.correspondencia.mapper.enums.StatusCorresp;
+import com.recepcao.correspondencia.repositories.CorrespondenciaRepository;
 import com.recepcao.correspondencia.repositories.EmpresaRepository;
 import com.recepcao.correspondencia.services.CorrespondenciaService;
 import com.recepcao.correspondencia.services.arquivos.StorageService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -32,6 +32,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,6 +46,7 @@ public class CorrespondenciaController {
     private final CorrespondenciaService correspondenciaService;
     private final StorageService storageService;
     private final EmpresaRepository empresaRepository;
+    private final CorrespondenciaRepository correspondenciaRepository;
 
     /**
      * ✅ Recebe uma nova correspondência e processa (regra de negócio completa).
@@ -54,28 +57,25 @@ public class CorrespondenciaController {
         return ResponseEntity.ok(salva);
     }
 
-    @PostMapping(value = "/processar-correspondencia/receber-com-foto", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<Correspondencia> receberCorrespondenciaComFoto(
-            @NotNull @RequestParam String nomeEmpresa,
-            @NotNull @RequestParam String remetente,
-            @RequestParam(required = false) MultipartFile foto
+    @PostMapping(value = "/receber", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Correspondencia> receberCorrespondenciaComArquivos(
+            @RequestPart("nomeEmpresa") String nomeEmpresa,
+            @RequestPart("remetente") String remetente,
+            @RequestPart(value = "arquivos", required = false) List<MultipartFile> arquivos
     ) {
-        // Salva a foto no servidor/local (no futuro, no S3)
-        String caminhoFoto = null;
-        if (foto != null && !foto.isEmpty()) {
-            caminhoFoto = storageService.salvarFoto(foto);
-        }
+        List<String> keys = (arquivos == null || arquivos.isEmpty())
+                ? List.of()
+                : storageService.salvarMuitos(arquivos);
 
-        Correspondencia correspondencia = new Correspondencia();
-        correspondencia.setNomeEmpresaConexa(nomeEmpresa);
-        correspondencia.setRemetente(remetente);
-        correspondencia.setFotoCorrespondencia(caminhoFoto);
-        correspondencia.setStatusCorresp(StatusCorresp.ANALISE);
-        correspondencia.setDataRecebimento(LocalDate.now());
+        Correspondencia c = new Correspondencia();
+        c.setNomeEmpresaConexa(nomeEmpresa == null ? null : nomeEmpresa.trim());
+        c.setRemetente(remetente == null ? null : remetente.trim());
+        c.setStatusCorresp(StatusCorresp.ANALISE);
+        c.setDataRecebimento(LocalDateTime.now(ZoneId.of("America/Recife")));
+        c.setAnexos(keys); // << AGORA É LISTA
 
-        Correspondencia processada = correspondenciaService.processarCorrespondencia(correspondencia);
-
-        return ResponseEntity.ok(processada);
+        Correspondencia salvo = correspondenciaService.processarCorrespondencia(c);
+        return new ResponseEntity<>(salvo, HttpStatus.OK);
     }
 
 
@@ -358,7 +358,12 @@ public class CorrespondenciaController {
             var props = new java.util.Properties();
             props.put("mail.smtp.host", "smtp.hostinger.com.br");
             props.put("mail.smtp.port", "587");
-            props.put("mail.smtp.ssl.enable", "true");
+
+            // ✅ CORREÇÃO: Use STARTTLS em vez de SSL para porta 587
+            props.put("mail.smtp.starttls.enable", "true");
+            props.put("mail.smtp.starttls.required", "true");
+            // ❌ REMOVA: props.put("mail.smtp.ssl.enable", "true");
+
             props.put("mail.smtp.auth", "true");
             props.put("mail.smtp.connectiontimeout", "30000");
             props.put("mail.smtp.timeout", "30000");
@@ -368,7 +373,8 @@ public class CorrespondenciaController {
             final String pass = "!ZC,wEanye*e3L+F";
 
             var session = jakarta.mail.Session.getInstance(props, new jakarta.mail.Authenticator() {
-                @Override protected jakarta.mail.PasswordAuthentication getPasswordAuthentication() {
+                @Override
+                protected jakarta.mail.PasswordAuthentication getPasswordAuthentication() {
                     return new jakarta.mail.PasswordAuthentication(user, pass);
                 }
             });
@@ -381,13 +387,35 @@ public class CorrespondenciaController {
             msg.setText("Funcionou.");
 
             jakarta.mail.Transport.send(msg);
-            return ResponseEntity.ok("Enviado com sucesso");
+            return ResponseEntity.ok("✅ Email enviado com sucesso!");
+
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("Falha no envio: " + e);
+            return ResponseEntity.status(500).body("❌ Falha no envio: " + e.getMessage());
         }
     }
 
+    // A) só aviso OU aviso + anexos vindos por URL já salvos
+    @PostMapping("/enviar-aviso-resend")
+    public ResponseEntity<EmailResponseRecord> enviarAvisoResend(@RequestBody EmailServiceDTO dto) {
+        return ResponseEntity.ok(correspondenciaService.envioEmailCorrespondenciaResend(dto));
+    }
 
+    // B) aviso + anexos enviados agora (upload)
+    @PostMapping(value="/{id}/enviar-aviso-resend-upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<EmailResponseRecord> enviarAvisoResendUpload(
+            @PathVariable Long id,
+            @RequestPart("emailDestino") String emailDestino,
+            @RequestPart("arquivos") List<MultipartFile> arquivos
+    ) {
+        var corr = correspondenciaRepository.findById(id)
+                .orElseThrow(() -> new APIExceptions("Correspondência não encontrada"));
+
+        var resp = correspondenciaService.envioEmailCorrespondenciaResendUpload(
+                corr.getNomeEmpresaConexa(), emailDestino, arquivos);
+
+        return ResponseEntity.ok(resp);
+    }
 
 
 

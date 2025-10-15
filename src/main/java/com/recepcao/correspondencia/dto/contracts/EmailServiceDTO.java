@@ -13,4 +13,6 @@ import java.util.List;
 public class EmailServiceDTO {
     private String emailDestino;
     private String nomeEmpresaConexa;
+    private boolean anexos;
+    private List<String> anexosUrls;
 }

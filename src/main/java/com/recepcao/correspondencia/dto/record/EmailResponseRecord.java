@@ -1,4 +1,6 @@
 package com.recepcao.correspondencia.dto.record;
 
-public record EmailResponseRecord(String status, String enviadoPara, java.time.LocalDate data) {
+import java.time.LocalDateTime;
+
+public record EmailResponseRecord(String status, String enviadoPara, LocalDateTime data) {
 }

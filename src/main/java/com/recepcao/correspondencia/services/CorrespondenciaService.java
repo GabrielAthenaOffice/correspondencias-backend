@@ -1,10 +1,10 @@
 package com.recepcao.correspondencia.services;
 
-import com.recepcao.correspondencia.agencias.Unidade;
 import com.recepcao.correspondencia.clients.ConexaClients;
 import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
 import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.contracts.EmailServiceDTO;
+import com.recepcao.correspondencia.dto.record.AnexoDTO;
 import com.recepcao.correspondencia.dto.record.ConexaContractResponse;
 import com.recepcao.correspondencia.dto.record.EmailResponseRecord;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
@@ -19,7 +19,10 @@ import com.recepcao.correspondencia.mapper.enums.StatusEmpresa;
 import com.recepcao.correspondencia.repositories.CorrespondenciaRepository;
 import com.recepcao.correspondencia.repositories.CustomerRepository;
 import com.recepcao.correspondencia.repositories.EmpresaRepository;
+import com.recepcao.correspondencia.services.arquivos.StorageService;
 import com.recepcao.correspondencia.services.arquivos.UnidadeService;
+import com.recepcao.correspondencia.services.arquivos.email.EmailService;
+import com.recepcao.correspondencia.services.arquivos.email.ResendEmailServiceAdapter;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +35,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -54,6 +58,11 @@ public class CorrespondenciaService {
     // enderecoValidatorService removido porque não é utilizado neste serviço
     private final HistoricoService historicoService;
     private final CustomerRepository customerRepository;
+    // imports: Pattern, Comparator, Objects, LocalDate, etc.
+    private static final java.util.regex.Pattern EMAIL_RX =
+            java.util.regex.Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private final ResendEmailServiceAdapter resendEmail;
+    private final StorageService storageService;
 
 
     public CorrespondenciaResponse listarTodas(Integer pageNumber, Integer pageSize, String sortBy, String sortOrder) {
@@ -173,7 +182,7 @@ public class CorrespondenciaService {
         List<CustomerResponse> empresasEncontradas = verificarEmpresaConexa(correspondencia.getNomeEmpresaConexa());
 
         log.debug("Resultado da busca no Conexa ({} resultados) para '{}'", empresasEncontradas.size(), correspondencia.getNomeEmpresaConexa());
-        correspondencia.setDataRecebimento(LocalDate.now());
+        correspondencia.setDataRecebimento(LocalDateTime.now(java.time.ZoneId.of("America/Recife")));
 
         if (!empresasEncontradas.isEmpty()) {
             CustomerResponse customer = empresasEncontradas.get(0);
@@ -382,9 +391,9 @@ public class CorrespondenciaService {
         dto.setRemetente(correspondencia.getRemetente());
         dto.setNomeEmpresaConexa(correspondencia.getNomeEmpresaConexa());
         dto.setStatusCorresp(correspondencia.getStatusCorresp() != null ? correspondencia.getStatusCorresp().name() : null);
-        dto.setDataRecebimento(correspondencia.getDataRecebimento());
+        dto.setDataRecebimento(LocalDate.from(correspondencia.getDataRecebimento()));
         dto.setDataAvisoConexa(correspondencia.getDataAvisoConexa());
-        dto.setFotoCorrespondencia(correspondencia.getFotoCorrespondencia());
+        dto.setFotoCorrespondencia(correspondencia.getAnexos());
 
         // Buscar dados da empresa se existir
         if (correspondencia.getNomeEmpresaConexa() != null && !correspondencia.getNomeEmpresaConexa().isEmpty()) {
@@ -476,7 +485,7 @@ public class CorrespondenciaService {
     if (updates.getNomeEmpresaConexa() != null) correspondencia.setNomeEmpresaConexa(updates.getNomeEmpresaConexa());
     if (updates.getStatusCorresp() != null) correspondencia.setStatusCorresp(updates.getStatusCorresp());
     if (updates.getDataAvisoConexa() != null) correspondencia.setDataAvisoConexa(updates.getDataAvisoConexa());
-    if (updates.getFotoCorrespondencia() != null) correspondencia.setFotoCorrespondencia(updates.getFotoCorrespondencia());
+    if (updates.getAnexos() != null) correspondencia.setAnexos(updates.getAnexos());
 
     Correspondencia atualizada = correspondenciaRepository.save(correspondencia);
 
@@ -524,20 +533,147 @@ public class CorrespondenciaService {
         );
 
         // 3) data mais recente (evita NPE do getLast)
-        LocalDate dataMaisRecente = correspondencias.stream()
-                .map(Correspondencia::getDataRecebimento)
+        LocalDateTime dataMaisRecente = correspondencias.stream()
+                .map(Correspondencia::getDataRecebimento) // LocalDateTime
                 .filter(Objects::nonNull)
                 .max(Comparator.naturalOrder())
-                .orElse(LocalDate.now());
+                .orElse(LocalDateTime.now(ZoneId.of("America/Recife")));
 
-        EmailResponseRecord emailResponseRecord = new EmailResponseRecord(
+        return new EmailResponseRecord(
                 "Enviado",
                 emailServiceDTO.getNomeEmpresaConexa(),
                 dataMaisRecente
                 );
-
-        return emailResponseRecord;
     }
 
+    // 2.1) Sem upload (anexos vindos por URL já salvos) OU só aviso
+    public EmailResponseRecord envioEmailCorrespondenciaResend(EmailServiceDTO dto) {
+        String nome  = dto.getNomeEmpresaConexa() == null ? "" : dto.getNomeEmpresaConexa().trim();
+        String email = dto.getEmailDestino()       == null ? "" : dto.getEmailDestino().trim();
+
+        if (nome.isBlank()) throw new APIExceptions("Nome da empresa é obrigatório");
+        if (!EMAIL_RX.matcher(email).matches()) throw new APIExceptions("E-mail de destino inválido");
+
+        var correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(nome);
+        if (correspondencias == null || correspondencias.isEmpty())
+            throw new APIExceptions("Nenhuma correspondência encontrada para '" + nome + "'");
+
+        var empresa = empresaRepository.findByNomeEmpresaIgnoreCase(nome)
+                .orElseThrow(() -> new APIExceptions("Empresa não encontrada: " + nome));
+
+        // Monta anexos:
+        List<AnexoDTO> anexos = List.of();
+
+        // (A) se vieram "urls/keys" explicitamente no DTO, usa elas
+        if (dto.isAnexos() && dto.getAnexosUrls() != null && !dto.getAnexosUrls().isEmpty()) {
+            anexos = carregarAnexosDoStorage(dto.getAnexosUrls());
+        }
+        // (B) senão, se dto.isAnexos() = true, carrega das correspondências (chaves salvas no banco)
+        else if (dto.isAnexos()) {
+            List<String> keys = correspondencias.stream()
+                    .filter(c -> c.getAnexos() != null)
+                    .flatMap(c -> c.getAnexos().stream())
+                    .toList();
+            anexos = carregarAnexosDoStorage(keys);
+        }
+
+        // envia
+        resendEmail.enviarAvisoCorrespondencias(email, nome, correspondencias, anexos);
+
+        // histórico
+        historicoService.registrar(
+                "Correspondencia",
+                empresa.getId(),
+                (anexos.isEmpty() ? "Aviso (Resend)" : "Aviso+anexos (Resend)"),
+                "Enviado para '" + nome + "' (" + email + ")."
+        );
+
+        // data mais recente
+        var dataMaisRecente = correspondencias.stream()
+                .map(Correspondencia::getDataRecebimento) // LocalDateTime
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElse(LocalDateTime.now(ZoneId.of("America/Recife")));
+
+        return new EmailResponseRecord("Enviado", nome, dataMaisRecente);
+    }
+
+
+    // 2.2) Com upload direto de arquivos (controller passa MultipartFile; service converte)
+    public EmailResponseRecord envioEmailCorrespondenciaResendUpload(
+            String nomeEmpresaConexa,
+            String emailDestino,
+            List<org.springframework.web.multipart.MultipartFile> arquivosUpload
+    ) {
+
+        EmailServiceDTO base = new EmailServiceDTO();
+        base.setNomeEmpresaConexa(nomeEmpresaConexa);
+        base.setEmailDestino(emailDestino);
+        base.setAnexos(true);
+
+        // converte MultipartFile -> AnexoDTO
+        List<AnexoDTO> anexos = mapMultipart(arquivosUpload);
+
+        // reaproveita core (sem URLs), só mudando overload de envio
+        return envioCore(nomeEmpresaConexa, emailDestino, anexos /*evento*/);
+    }
+
+    // ===== Core compartilhado (evita duplicação) =====
+    private EmailResponseRecord envioCore(String nome, String email, List<AnexoDTO> anexos) {
+        if (nome == null || nome.isBlank()) throw new APIExceptions("Nome da empresa é obrigatório");
+        if (email == null || !EMAIL_RX.matcher(email).matches()) throw new APIExceptions("E-mail de destino inválido");
+
+        var correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(nome.trim());
+        if (correspondencias == null || correspondencias.isEmpty())
+            throw new APIExceptions("Nenhuma correspondência encontrada para '" + nome + "'");
+
+        var empresa = empresaRepository.findByNomeEmpresaIgnoreCase(nome.trim())
+                .orElseThrow(() -> new APIExceptions("Empresa não encontrada: " + nome));
+
+        resendEmail.enviarAvisoCorrespondencias(email, nome, correspondencias, anexos == null ? List.of() : anexos);
+
+        historicoService.registrar("Correspondencia", empresa.getId(),
+                (anexos == null || anexos.isEmpty() ? "Aviso (upload vazio)" : "Aviso+anexos (upload)"),
+                "Enviado para '" + nome + "' (" + email + ").");
+
+        var dataMaisRecente = correspondencias.stream()
+                .map(Correspondencia::getDataRecebimento)
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElse(LocalDateTime.now(ZoneId.of("America/Recife")));
+
+        return new EmailResponseRecord("Enviado", nome, dataMaisRecente);
+    }
+
+
+    private List<AnexoDTO> mapMultipart(List<org.springframework.web.multipart.MultipartFile> files) {
+        if (files == null) return List.of();
+        List<AnexoDTO> out = new ArrayList<>();
+        for (var f : files) {
+            try {
+                out.add(new AnexoDTO(
+                        f.getOriginalFilename(),
+                        f.getContentType() == null ? "application/octet-stream" : f.getContentType(),
+                        f.getBytes()
+                ));
+            } catch (Exception e) {
+                throw new APIExceptions("Falha lendo arquivo: " + f.getOriginalFilename());
+            }
+        }
+        return out;
+    }
+
+    private List<AnexoDTO> carregarAnexosDoStorage(List<String> keys) {
+        if (keys == null || keys.isEmpty()) return List.of();
+        List<AnexoDTO> out = new ArrayList<>();
+        for (String k : keys) {
+            if (k == null || k.isBlank() || !storageService.exists(k)) continue;
+            byte[] data = storageService.read(k);
+            String filename = storageService.originalFilename(k);
+            String contentType = storageService.contentType(k);
+            out.add(new AnexoDTO(filename, contentType, data));
+        }
+        return out;
+    }
 
 }

@@ -9,6 +9,9 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Data
@@ -28,10 +31,17 @@ public class Correspondencia {
     @Enumerated(EnumType.STRING)
     private StatusCorresp statusCorresp; // AVISADA, DEVOLVIDA, USO_INDEVIDO, ANALISE
 
-    private LocalDate dataRecebimento;
+    private LocalDateTime dataRecebimento;
 
     private LocalDate dataAvisoConexa;
 
-    @Size(max = 255)
-    private String fotoCorrespondencia; // pode ser URL ou path no storage
+    @ElementCollection
+    @CollectionTable(name = "correspondencia_anexos",
+            joinColumns = @JoinColumn(name = "correspondencia_id"))
+    @Column(name = "arquivo_url", length = 255)
+    private List<String> anexos = new ArrayList<>();
+
+    // (opcional) mantenha temporariamente p/ compatibilidade e remova depois
+    // @Deprecated
+    // private String fotoCorrespondencia;
 }

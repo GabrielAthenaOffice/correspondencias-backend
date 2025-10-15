@@ -17,7 +17,7 @@ public class CorrespondenciaComEmpresaDTO {
     private String statusCorresp;
     private LocalDate dataRecebimento;
     private LocalDate dataAvisoConexa;
-    private String fotoCorrespondencia;
+    private List<String> fotoCorrespondencia;
     // Dados da empresa diretamente
     private String nomeEmpresa;
     private String cnpj;

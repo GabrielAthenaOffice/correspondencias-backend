@@ -95,7 +95,14 @@
             <scope>runtime</scope>
         </dependency>
 
-	</dependencies>
+        <dependency>
+            <groupId>com.resend</groupId>
+            <artifactId>resend-java</artifactId>
+            <version>3.0.0</version>
+        </dependency>
+
+
+    </dependencies>
 
     <dependencyManagement>
         <dependencies>
