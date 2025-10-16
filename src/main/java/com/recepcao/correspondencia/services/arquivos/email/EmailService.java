@@ -73,7 +73,7 @@ public class EmailService {
             String codRastreio = nvl(null);         // ajuste o getter conforme seu Entity
             String obs = nvl(null);                     // ajuste o getter conforme seu Entity
             String recebidaEm = c.getDataRecebimento() != null
-                    ? c.getDataRecebimento().atStartOfDay(ZONE).format(DTF)
+                    ? c.getDataRecebimento().atZone(ZONE).format(DTF)
                     : "-";
 
             sb.append("Remetente: ").append(remetente).append("\n")

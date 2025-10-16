@@ -41,6 +41,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import com.recepcao.correspondencia.dto.CorrespondenciaComEmpresaDTO;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -160,6 +161,16 @@ public class CorrespondenciaService {
         );
 
         return response.getBody();
+    }
+
+    /**
+     * RETORNAR EMPRESA NO BANCO DE DADOS DA ATHENA
+     */
+    public Empresa buscarEmpresaPeloNomeAthena(String nome) {
+        Empresa empresa = empresaRepository.findByNomeEmpresa(nome)
+                .orElseThrow(() -> new APIExceptions("Empresa não existente"));
+
+        return empresa;
     }
 
     /**
@@ -548,27 +559,38 @@ public class CorrespondenciaService {
 
     // 2.1) Sem upload (anexos vindos por URL já salvos) OU só aviso
     public EmailResponseRecord envioEmailCorrespondenciaResend(EmailServiceDTO dto) {
-        String nome  = dto.getNomeEmpresaConexa() == null ? "" : dto.getNomeEmpresaConexa().trim();
-        String email = dto.getEmailDestino()       == null ? "" : dto.getEmailDestino().trim();
+        String nome  = dto.getNomeEmpresaConexa() == null ? "" : dto.getNomeEmpresaConexa();
 
-        if (nome.isBlank()) throw new APIExceptions("Nome da empresa é obrigatório");
-        if (!EMAIL_RX.matcher(email).matches()) throw new APIExceptions("E-mail de destino inválido");
-
-        var correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(nome);
-        if (correspondencias == null || correspondencias.isEmpty())
-            throw new APIExceptions("Nenhuma correspondência encontrada para '" + nome + "'");
-
-        var empresa = empresaRepository.findByNomeEmpresaIgnoreCase(nome)
+        // tenta achar empresa (nome exato ou contendo)
+        Empresa empresa = empresaRepository.findByNomeEmpresa(nome)
                 .orElseThrow(() -> new APIExceptions("Empresa não encontrada: " + nome));
 
-        // Monta anexos:
+        List<String> emails = empresa.getEmail();
+
+        if (emails == null || emails.isEmpty())
+            throw new APIExceptions("Empresa não possui e-mail cadastrado.");
+
+        String email = emails.get(0); // agora é seguro
+
+        System.out.printf("[Resend] nome='%s' email='%s' anexos=%s urls=%s%n",
+                nome, email, dto.isAnexos(), dto.getAnexosUrls());
+
+        if (nome.isBlank()) throw new APIExceptions("Nome da empresa é obrigatório");
+        if (!EMAIL_RX.matcher(email).matches())
+            throw new APIExceptions("E-mail de destino inválido: " + email);
+
+        // tenta achar correspondências; se não houver, continua
+        var correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(nome);
+        if (correspondencias == null) correspondencias = new ArrayList<>();
+
+        // monta anexos
         List<AnexoDTO> anexos = List.of();
 
-        // (A) se vieram "urls/keys" explicitamente no DTO, usa elas
+        // (A) se vieram URLs explicitamente
         if (dto.isAnexos() && dto.getAnexosUrls() != null && !dto.getAnexosUrls().isEmpty()) {
             anexos = carregarAnexosDoStorage(dto.getAnexosUrls());
         }
-        // (B) senão, se dto.isAnexos() = true, carrega das correspondências (chaves salvas no banco)
+        // (B) se dto.isAnexos() = true, mas sem URLs → tenta carregar do banco
         else if (dto.isAnexos()) {
             List<String> keys = correspondencias.stream()
                     .filter(c -> c.getAnexos() != null)
@@ -580,17 +602,17 @@ public class CorrespondenciaService {
         // envia
         resendEmail.enviarAvisoCorrespondencias(email, nome, correspondencias, anexos);
 
-        // histórico
+        // registra histórico
         historicoService.registrar(
                 "Correspondencia",
                 empresa.getId(),
-                (anexos.isEmpty() ? "Aviso (Resend)" : "Aviso+anexos (Resend)"),
+                anexos.isEmpty() ? "Aviso (Resend)" : "Aviso+anexos (Resend)",
                 "Enviado para '" + nome + "' (" + email + ")."
         );
 
-        // data mais recente
+        // pega data mais recente de recebimento
         var dataMaisRecente = correspondencias.stream()
-                .map(Correspondencia::getDataRecebimento) // LocalDateTime
+                .map(Correspondencia::getDataRecebimento)
                 .filter(Objects::nonNull)
                 .max(Comparator.naturalOrder())
                 .orElse(LocalDateTime.now(ZoneId.of("America/Recife")));
@@ -602,21 +624,39 @@ public class CorrespondenciaService {
     // 2.2) Com upload direto de arquivos (controller passa MultipartFile; service converte)
     public EmailResponseRecord envioEmailCorrespondenciaResendUpload(
             String nomeEmpresaConexa,
-            String emailDestino,
-            List<org.springframework.web.multipart.MultipartFile> arquivosUpload
+            List<MultipartFile> arquivosUpload
     ) {
 
+        Empresa empresa = empresaRepository.findByNomeEmpresa(nomeEmpresaConexa)
+                        .orElseThrow(() -> new APIExceptions("Empresa não encontrada"));
+
+        String emailDestino = empresa.getEmail().get(0);
+
+        System.out.printf("[ResendUpload] nome='%s' email='%s' arquivos=%d%n",
+                nomeEmpresaConexa, emailDestino,
+                (arquivosUpload == null ? 0 : arquivosUpload.size()));
+
+        if (nomeEmpresaConexa == null || nomeEmpresaConexa.isBlank())
+            throw new APIExceptions("Nome da empresa é obrigatório");
+        if (emailDestino == null || emailDestino.isBlank())
+            throw new APIExceptions("E-mail de destino não informado");
+        if (!EMAIL_RX.matcher(emailDestino).matches())
+            throw new APIExceptions("E-mail de destino inválido: " + emailDestino);
+
+        // prepara DTO base
         EmailServiceDTO base = new EmailServiceDTO();
-        base.setNomeEmpresaConexa(nomeEmpresaConexa);
-        base.setEmailDestino(emailDestino);
-        base.setAnexos(true);
+        base.setNomeEmpresaConexa(nomeEmpresaConexa.trim());
+        base.setEmailDestino(emailDestino.trim());
+        base.setAnexos(arquivosUpload != null && !arquivosUpload.isEmpty());
 
-        // converte MultipartFile -> AnexoDTO
-        List<AnexoDTO> anexos = mapMultipart(arquivosUpload);
+        // converte anexos se houver
+        List<AnexoDTO> anexos = (arquivosUpload == null || arquivosUpload.isEmpty())
+                ? List.of()
+                : mapMultipart(arquivosUpload);
 
-        // reaproveita core (sem URLs), só mudando overload de envio
-        return envioCore(nomeEmpresaConexa, emailDestino, anexos /*evento*/);
+        return envioCore(nomeEmpresaConexa, emailDestino, anexos);
     }
+
 
     // ===== Core compartilhado (evita duplicação) =====
     private EmailResponseRecord envioCore(String nome, String email, List<AnexoDTO> anexos) {

@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Bean;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @EnableFeignClients
 @SpringBootApplication
@@ -31,7 +32,7 @@ public class CorrespondenciaApplication {
 			testCorrespondencia.setRemetente("Teste Remetente");
 			testCorrespondencia.setNomeEmpresaConexa("Empresa Teste");
 			testCorrespondencia.setStatusCorresp(StatusCorresp.ANALISE);
-			testCorrespondencia.setDataRecebimento(LocalDate.now());
+			testCorrespondencia.setDataRecebimento(LocalDateTime.now(ZoneId.of("America/Recife")));
 			correspondenciaRepository.save(testCorrespondencia);
 
 			// Add test history

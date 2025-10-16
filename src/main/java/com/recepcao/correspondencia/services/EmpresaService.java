@@ -135,8 +135,69 @@ public class EmpresaService {
         return atualizada;
     }
 
+    public void deletarEmpresa(Long id) {
+        // busca a empresa no banco
+        Empresa empresa = empresaRepository.findById(id)
+                .orElseThrow(() -> new APIExceptions("Empresa não encontrada com ID: " + id));
 
+        // deleta a empresa
+        empresaRepository.delete(empresa);
 
+        // registra no histórico (mantém rastreabilidade)
+        historicoService.registrar(
+                "Empresa",
+                id,
+                "Exclusão",
+                String.format("Empresa '%s' (ID: %d) foi excluída do sistema.", empresa.getNomeEmpresa(), id)
+        );
+
+        // 4️⃣ Log no console para depuração
+        System.out.printf("[EmpresaService] Empresa ID=%d ('%s') removida com sucesso.%n",
+                id, empresa.getNomeEmpresa());
+    }
+
+    public Empresa atualizarCamposEspecificos(Long id, Empresa updates) {
+        Empresa empresa = empresaRepository.findById(id)
+                .orElseThrow(() -> new APIExceptions("Empresa não encontrada com ID: " + id));
+
+        // Atualiza apenas os campos que vierem preenchidos
+        if (updates.getNomeEmpresa() != null && !updates.getNomeEmpresa().isBlank()) {
+            empresa.setNomeEmpresa(updates.getNomeEmpresa().trim());
+        }
+
+        if (updates.getEmail() != null && !updates.getEmail().isEmpty()) {
+            empresa.setEmail(updates.getEmail());
+        }
+
+        if (updates.getTelefone() != null && !updates.getTelefone().isEmpty()) {
+            empresa.setTelefone(updates.getTelefone());
+        }
+
+        if (updates.getCnpj() != null && !updates.getCnpj().isBlank()) {
+            empresa.setCnpj(updates.getCnpj().trim());
+        }
+
+        if (updates.getEndereco() != null && !updates.getEndereco().getBairro().isEmpty()) {
+            empresa.setEndereco(updates.getEndereco());
+        }
+
+        if (updates.getMensagem() != null) {
+            empresa.setMensagem(updates.getMensagem().trim());
+        }
+
+        Empresa atualizada = empresaRepository.save(empresa);
+
+        // Registra histórico
+        historicoService.registrar(
+                "Empresa",
+                empresa.getId(),
+                "Atualização de dados",
+                String.format("Campos da empresa '%s' atualizados manualmente.", empresa.getNomeEmpresa())
+        );
+
+        System.out.printf("[EmpresaService] Empresa ID=%d atualizada parcialmente.%n", id);
+        return atualizada;
+    }
 
 
 }

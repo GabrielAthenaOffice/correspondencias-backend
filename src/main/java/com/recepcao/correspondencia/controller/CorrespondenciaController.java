@@ -18,19 +18,10 @@ import com.recepcao.correspondencia.services.arquivos.StorageService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-// import removido: ResponseStatusException não é utilizado neste controller
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -39,7 +30,6 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/correspondencias")
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:5174"})
 @RequiredArgsConstructor
 public class CorrespondenciaController {
 
@@ -49,7 +39,7 @@ public class CorrespondenciaController {
     private final CorrespondenciaRepository correspondenciaRepository;
 
     /**
-     * ✅ Recebe uma nova correspondência e processa (regra de negócio completa).
+     * // === CRIAÇÃO DE CORRESPONDÊNCIA ===
      */
     @PostMapping("/processar-correspondencia")
     public ResponseEntity<Correspondencia> receberCorrespondencia(@Valid @RequestBody Correspondencia correspondencia) {
@@ -72,39 +62,40 @@ public class CorrespondenciaController {
         c.setRemetente(remetente == null ? null : remetente.trim());
         c.setStatusCorresp(StatusCorresp.ANALISE);
         c.setDataRecebimento(LocalDateTime.now(ZoneId.of("America/Recife")));
-        c.setAnexos(keys); // << AGORA É LISTA
+        c.setAnexos(keys);
 
         Correspondencia salvo = correspondenciaService.processarCorrespondencia(c);
         return new ResponseEntity<>(salvo, HttpStatus.OK);
     }
 
-
     /**
-     * Lista todas as correspondências salvas no banco.
+     * // === LISTAGENS ===
      */
     @GetMapping("/listar-correspondencia")
-    public ResponseEntity<CorrespondenciaResponse> listarCorrespondencias(@RequestParam(name = "pageNumber", defaultValue = "0", required = false) Integer pageNumber,
-                                                                          @RequestParam(name = "pageSize", defaultValue = "50", required = false) Integer pageSize,
-                                                                          @RequestParam(name = "sortBy", defaultValue = "id", required = false) String sortBy,
-                                                                          @RequestParam(name = "sortOrder", defaultValue = "desc", required = false) String sortOrder) {
+    public ResponseEntity<CorrespondenciaResponse> listarCorrespondencias(
+            @RequestParam(defaultValue = "0") Integer pageNumber,
+            @RequestParam(defaultValue = "50") Integer pageSize,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortOrder
+    ) {
         CorrespondenciaResponse correspondenciaResponse = correspondenciaService.listarTodas(pageNumber, pageSize, sortBy, sortOrder);
-        return new ResponseEntity<>(correspondenciaResponse, HttpStatus.OK);
+        return ResponseEntity.ok(correspondenciaResponse);
     }
 
-    /**
-     * Lista correspondências com dados da empresa associada.
-     */
     @GetMapping("/listar-com-empresa")
-    public ResponseEntity<List<CorrespondenciaComEmpresaDTO>> listarCorrespondenciasComEmpresa(@RequestParam(name = "pageNumber", defaultValue = "0", required = false) Integer pageNumber,
-                                                                                               @RequestParam(name = "pageSize", defaultValue = "50", required = false) Integer pageSize,
-                                                                                               @RequestParam(name = "sortBy", defaultValue = "id", required = false) String sortBy,
-                                                                                               @RequestParam(name = "sortOrder", defaultValue = "desc", required = false) String sortOrder) {
-        List<CorrespondenciaComEmpresaDTO> correspondenciasComEmpresa = correspondenciaService.listarComEmpresa(pageNumber, pageSize, sortBy, sortOrder);
-        return new ResponseEntity<>(correspondenciasComEmpresa, HttpStatus.OK);
+    public ResponseEntity<List<CorrespondenciaComEmpresaDTO>> listarCorrespondenciasComEmpresa(
+            @RequestParam(defaultValue = "0") Integer pageNumber,
+            @RequestParam(defaultValue = "50") Integer pageSize,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortOrder
+    ) {
+        List<CorrespondenciaComEmpresaDTO> correspondenciasComEmpresa =
+                correspondenciaService.listarComEmpresa(pageNumber, pageSize, sortBy, sortOrder);
+        return ResponseEntity.ok(correspondenciasComEmpresa);
     }
 
     /**
-     * Busca empresas no Conexa pelo nome. Útil para testes rápidos da API Conexa.
+     * // === EMPRESAS (Conexa) ===
      */
     @GetMapping("/buscar-empresa")
     public ResponseEntity<List<CustomerResponse>> buscarEmpresasNoConexa(@NotNull @RequestParam String nomeEmpresa) {
@@ -113,124 +104,7 @@ public class CorrespondenciaController {
     }
 
     /**
-     * Endpoint de teste simples para verificar se o controller está funcionando
-     */
-    @GetMapping("/teste")
-    public ResponseEntity<String> teste() {
-        System.out.println("=== ENDPOINT DE TESTE CHAMADO ===");
-        return ResponseEntity.ok("Controller funcionando!");
-    }
-
-    /**
-     * Endpoint de teste para verificar se o arquivo existe
-     * Exemplo: GET /api/correspondencias/teste-arquivo/{nomeArquivo}
-     */
-    @GetMapping("/teste-arquivo/{nomeArquivo}")
-    public ResponseEntity<String> testeArquivo(@PathVariable String nomeArquivo) {
-        try {
-            String currentDir = System.getProperty("user.dir");
-            Path filePath = Paths.get(currentDir, "uploads", "correspondencias", nomeArquivo).normalize();
-            
-            System.out.println("=== TESTE ARQUIVO ===");
-            System.out.println("Nome do arquivo: " + nomeArquivo);
-            System.out.println("Diretório atual: " + currentDir);
-            System.out.println("Caminho completo: " + filePath.toString());
-            System.out.println("Arquivo existe: " + Files.exists(filePath));
-            System.out.println("===================");
-            
-            if (Files.exists(filePath)) {
-                return ResponseEntity.ok("Arquivo encontrado: " + filePath.toString());
-            } else {
-                return ResponseEntity.ok("Arquivo NÃO encontrado: " + filePath.toString());
-            }
-        } catch (Exception e) {
-            System.out.println("Erro no teste: " + e.getMessage());
-            e.printStackTrace();
-            return ResponseEntity.ok("Erro: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Endpoint para servir arquivos de correspondência (imagens, PDFs, etc)
-     * Exemplo: GET /api/correspondencias/arquivo/{nomeArquivo}
-     */
-    @GetMapping("/arquivo/{nomeArquivo}")
-    public ResponseEntity<Resource> servirArquivo(@PathVariable String nomeArquivo) {
-        try {
-            // Validar o nome do arquivo para evitar path traversal
-            if (nomeArquivo == null || nomeArquivo.trim().isEmpty() || nomeArquivo.contains("..")) {
-                System.out.println("Nome do arquivo inválido: " + nomeArquivo);
-                return ResponseEntity.badRequest().build();
-            }
-            
-            // Usar caminho absoluto baseado no diretório do projeto
-            String currentDir = System.getProperty("user.dir");
-            Path uploadDir = Paths.get(currentDir, "uploads", "correspondencias").normalize();
-            Path filePath = uploadDir.resolve(nomeArquivo).normalize();
-            
-            // Verificar se o arquivo está dentro do diretório de uploads
-            if (!filePath.startsWith(uploadDir)) {
-                System.out.println("Tentativa de acesso fora do diretório permitido: " + filePath);
-                return ResponseEntity.badRequest().build();
-            }
-            
-            System.out.println("Tentando acessar arquivo: " + filePath.toString());
-            
-            Resource resource = new UrlResource(filePath.toUri());
-            if (!resource.exists()) {
-                System.out.println("Arquivo não encontrado: " + filePath.toString());
-                return ResponseEntity.notFound().build();
-            }
-            
-            System.out.println("Arquivo encontrado: " + filePath.toString());
-            
-            // Detecta o tipo do arquivo
-            String contentType = Files.probeContentType(filePath);
-            if (contentType == null) {
-                contentType = "application/octet-stream";
-            }
-            
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
-                    .contentType(org.springframework.http.MediaType.parseMediaType(contentType))
-                    .body(resource);
-        } catch (Exception e) {
-            System.out.println("Erro ao servir arquivo: " + nomeArquivo);
-            e.printStackTrace(); // Adicionado para logar o erro
-            return ResponseEntity.badRequest().build();
-        }
-    }
-
-    /**
-     * Endpoint alternativo para servir arquivos diretamente
-     * Exemplo: GET /api/correspondencias/uploads/{nomeArquivo}
-     */
-    @GetMapping("/uploads/{nomeArquivo}")
-    public ResponseEntity<Resource> servirArquivoDireto(@PathVariable String nomeArquivo) {
-        try {
-            // Usar caminho absoluto
-            String currentDir = System.getProperty("user.dir");
-            Path filePath = Paths.get(currentDir, "uploads", "correspondencias", nomeArquivo).normalize();
-            Resource resource = new UrlResource(filePath.toUri());
-            if (!resource.exists()) {
-                return ResponseEntity.notFound().build();
-            }
-            // Detecta o tipo do arquivo
-            String contentType = Files.probeContentType(filePath);
-            if (contentType == null) {
-                contentType = "application/octet-stream";
-            }
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
-                    .contentType(org.springframework.http.MediaType.parseMediaType(contentType))
-                    .body(resource);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
-    }
-
-    /**
-     * Atualiza a data de aviso de uma correspondência
+     * // === ATUALIZAÇÕES ===
      */
     @PutMapping("/{id}/data-aviso")
     public ResponseEntity<Correspondencia> atualizarDataAviso(
@@ -238,42 +112,30 @@ public class CorrespondenciaController {
             @RequestParam(required = false) String dataAviso
     ) {
         try {
-            LocalDate data = null;
-            if (dataAviso != null && !dataAviso.trim().isEmpty()) {
-                try {
-                    data = LocalDate.parse(dataAviso);
-                } catch (Exception e) {
-                    System.err.println("Erro ao fazer parse da data: " + dataAviso + " - " + e.getMessage());
-                    return ResponseEntity.badRequest().build();
-                }
-            }
-            
+            LocalDate data = (dataAviso != null && !dataAviso.trim().isEmpty())
+                    ? LocalDate.parse(dataAviso)
+                    : null;
             Correspondencia correspondencia = correspondenciaService.atualizarDataAviso(id, data);
             return ResponseEntity.ok(correspondencia);
         } catch (APIExceptions e) {
-            System.err.println("Erro ao atualizar data de aviso para ID " + id + ": " + e.getMessage());
             return ResponseEntity.notFound().build();
         } catch (Exception e) {
-            System.err.println("Erro interno ao atualizar data de aviso para ID " + id + ": " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
-    /**
-     * Atualiza campos de uma correspondência (parcial).
-     * Ex: PUT /api/correspondencias/{id}
-     */
     @PutMapping("/{id}")
-    public ResponseEntity<Correspondencia> atualizarCorrespondencia(@PathVariable Long id, @RequestBody Correspondencia updates) {
+    public ResponseEntity<Correspondencia> atualizarCorrespondencia(
+            @PathVariable Long id,
+            @RequestBody Correspondencia updates
+    ) {
         try {
             Correspondencia atualizada = correspondenciaService.atualizarCorrespondencia(id, updates);
             return ResponseEntity.ok(atualizada);
         } catch (APIExceptions e) {
-            System.err.println("Erro ao atualizar correspondência ID " + id + ": " + e.getMessage());
             return ResponseEntity.notFound().build();
         } catch (Exception e) {
-            System.err.println("Erro interno ao atualizar correspondência ID " + id + ": " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
@@ -281,142 +143,42 @@ public class CorrespondenciaController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> apagarCorrespondencia(@PathVariable Long id) {
-        System.out.println("[CorrespondenciaController] Recebida requisição DELETE /api/correspondencias/" + id);
         try {
             correspondenciaService.apagarCorrespondencia(id);
-            System.out.println("[CorrespondenciaController] Correspondência " + id + " apagada com sucesso");
             return ResponseEntity.ok().build();
         } catch (APIExceptions e) {
-            System.err.println("[CorrespondenciaController] Não encontrada correspondência " + id + ": " + e.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Correspondência não encontrada");
         } catch (Exception e) {
-            System.err.println("[CorrespondenciaController] Erro ao apagar correspondência " + id + ": " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro ao apagar correspondência");
         }
     }
 
-
     /**
-     * CRIAÇÃO DE ADITIVOS
-     * Ex: PUT /api/correspondencias/{id}
+     *  === ENVIO DE AVISO ===
      */
-    @PostMapping("/criar-aditivo")
-    public ResponseEntity<AditivoResponseDTO> criarAditivo(
-            @RequestParam String nomeUnidade,
-            @RequestParam Long empresaId,
-            @RequestBody AditivoRequestDTO dadosFormulario
-    ) {
-        // Aqui você buscaria empresa e cliente no repositório
-        Optional<Empresa> empresa = empresaRepository.findById(empresaId);
-
-        Empresa empresa1 = empresa.get();
-
-        AditivoResponseDTO response = correspondenciaService.solicitarCriacaoAditivo(nomeUnidade, empresa1, dadosFormulario);
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/{id}/busca-por-id-cpf")
-    public ResponseEntity<Optional<String>> procurar(@PathVariable Long id) {
-        Optional<String> cpfDoCara = correspondenciaService.buscarCpfPorCustomerId(id);
-
-        return new ResponseEntity<>(cpfDoCara, HttpStatus.OK);
-    }
-
-    @GetMapping("/contratos/{id}/analise")
-    public ResponseEntity<?> analiseContrato(@PathVariable Long id) {
-        return ResponseEntity.ok(correspondenciaService.analisarContrato(id));
-    }
-
-    // CorrespondenciaController
-    @PostMapping("/enviar-aviso")
-    public ResponseEntity<EmailResponseRecord> enviarAviso(@RequestBody EmailServiceDTO dto) {
-        EmailResponseRecord resp = correspondenciaService.envioEmailCorrespondencia(dto);
-        return ResponseEntity.ok(resp);
-    }
-
-    // Em algum endpoint de debug só pra testar conectividade
-    @GetMapping("/_diag/smtp")
-    public ResponseEntity<String> diagSmtp() {
-        String host = "smtp.hostinger.com.br";
-        int[] ports = {465, 587};
-        StringBuilder sb = new StringBuilder();
-        for (int p : ports) {
-            try (var s = new java.net.Socket()) {
-                s.connect(new java.net.InetSocketAddress(host, p), 10000);
-                sb.append("OK conectou em ").append(host).append(":").append(p).append("\n");
-            } catch (Exception e) {
-                sb.append("FALHOU conectar em ").append(host).append(":").append(p).append(" -> ").append(e).append("\n");
-            }
-        }
-        return ResponseEntity.ok(sb.toString());
-    }
-
-    @GetMapping("/_diag/send")
-    public ResponseEntity<String> sendRaw() {
-        try {
-            var props = new java.util.Properties();
-            props.put("mail.smtp.host", "smtp.hostinger.com.br");
-            props.put("mail.smtp.port", "587");
-
-            // ✅ CORREÇÃO: Use STARTTLS em vez de SSL para porta 587
-            props.put("mail.smtp.starttls.enable", "true");
-            props.put("mail.smtp.starttls.required", "true");
-            // ❌ REMOVA: props.put("mail.smtp.ssl.enable", "true");
-
-            props.put("mail.smtp.auth", "true");
-            props.put("mail.smtp.connectiontimeout", "30000");
-            props.put("mail.smtp.timeout", "30000");
-            props.put("mail.debug", "true");
-
-            final String user = "adm@athenaoffice.com.br";
-            final String pass = "!ZC,wEanye*e3L+F";
-
-            var session = jakarta.mail.Session.getInstance(props, new jakarta.mail.Authenticator() {
-                @Override
-                protected jakarta.mail.PasswordAuthentication getPasswordAuthentication() {
-                    return new jakarta.mail.PasswordAuthentication(user, pass);
-                }
-            });
-
-            var msg = new jakarta.mail.internet.MimeMessage(session);
-            msg.setFrom(new jakarta.mail.internet.InternetAddress(user));
-            msg.setRecipients(jakarta.mail.Message.RecipientType.TO,
-                    jakarta.mail.internet.InternetAddress.parse("gabrielathenaoffice@gmail.com"));
-            msg.setSubject("Teste SMTP Hostinger");
-            msg.setText("Funcionou.");
-
-            jakarta.mail.Transport.send(msg);
-            return ResponseEntity.ok("✅ Email enviado com sucesso!");
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("❌ Falha no envio: " + e.getMessage());
-        }
-    }
-
-    // A) só aviso OU aviso + anexos vindos por URL já salvos
     @PostMapping("/enviar-aviso-resend")
     public ResponseEntity<EmailResponseRecord> enviarAvisoResend(@RequestBody EmailServiceDTO dto) {
         return ResponseEntity.ok(correspondenciaService.envioEmailCorrespondenciaResend(dto));
     }
 
-    // B) aviso + anexos enviados agora (upload)
-    @PostMapping(value="/{id}/enviar-aviso-resend-upload",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+
+    @PostMapping(
+            value = "/{id}/enviar-aviso-resend-upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
     public ResponseEntity<EmailResponseRecord> enviarAvisoResendUpload(
             @PathVariable Long id,
-            @RequestPart("emailDestino") String emailDestino,
-            @RequestPart("arquivos") List<MultipartFile> arquivos
+            @RequestPart(value = "arquivos", required = false) List<MultipartFile> arquivos
     ) {
         var corr = correspondenciaRepository.findById(id)
                 .orElseThrow(() -> new APIExceptions("Correspondência não encontrada"));
 
         var resp = correspondenciaService.envioEmailCorrespondenciaResendUpload(
-                corr.getNomeEmpresaConexa(), emailDestino, arquivos);
+                corr.getNomeEmpresaConexa(),
+                arquivos
+        );
 
         return ResponseEntity.ok(resp);
     }
-
-
-
 }

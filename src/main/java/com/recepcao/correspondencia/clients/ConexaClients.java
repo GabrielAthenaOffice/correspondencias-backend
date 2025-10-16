@@ -64,24 +64,60 @@ public class ConexaClients {
         }
     }
 
+    private Optional<String> getPersonsAndPickCpf(Long customerId) {
+        try {
+            HttpHeaders h = new HttpHeaders();
+            h.setBearerAuth(conexaApiConfig.getToken());
+            h.setAccept(List.of(MediaType.APPLICATION_JSON));
+            HttpEntity<Void> entity = new HttpEntity<>(h);
+
+            // baseUrl deve terminar com .../index.php/api/v2 (sem / no fim)
+            // Monta exatamente /persons?customerId[]=5977 (sem encodar [])
+            String base = conexaApiConfig.getBaseUrl(); // ex: https://athena.conexa.app/index.php/api/v2
+            String url = org.springframework.web.util.UriComponentsBuilder
+                    .fromHttpUrl(base + "/persons")
+                    .query("customerId[]=" + customerId)
+                    .build(false) // NÃO encode os colchetes
+                    .toUriString();
+
+            log.info("GET persons by customerId => {}", url);
+
+            ResponseEntity<String> r = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            String body = r.getBody();
+            if (body == null || body.isBlank()) return Optional.empty();
+
+            log.debug("persons body ({} chars) init='{}'",
+                    body.length(),
+                    body.substring(0, Math.min(200, body.length())).replaceAll("\\s+"," ").trim());
+
+            return extrairCpfFlex(body);
+        } catch (HttpClientErrorException e) {
+            log.warn("GET /persons customerId[]={} => {} body={}",
+                    customerId, e.getStatusCode(), e.getResponseBodyAsString());
+            return Optional.empty();
+        } catch (Exception e) {
+            log.warn("GET /persons falhou: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+
 // === ConexaClients ===
 
     // === PUBLIC ===
     public Optional<String> buscarCpfPorCustomerId(Long customerId) {
-        // 1) POST persons por customerId
-        Optional<String> v = postPersonsAndPickCpf(Map.of("customerId", List.of(customerId)));
+        // GET /persons?customerId[]=ID
+        Optional<String> v = getPersonsAndPickCpf(customerId);
         if (v.isPresent()) return v;
 
-        // 2) fallback: POST persons por companyId do customer
+        // fallback: tentar pelo customer (se fizer sentido pra você manter)
         CustomerResponse cust = buscarEmpresaPorId(customerId);
-        if (cust != null && cust.getCustomerId() != null) {
-            v = postPersonsAndPickCpf(Map.of("companyId", List.of(cust.getCustomerId())));
-            if (v.isPresent()) return v;
+        if (cust != null && cust.getCustomerId() != null && !Objects.equals(cust.getCustomerId(), customerId)) {
+            return getPersonsAndPickCpf(cust.getCustomerId());
         }
-
-        // 3) acabou
         return Optional.empty();
     }
+
 
     // === PRIVATE ===
     private Optional<String> postPersonsAndPickCpf(Map<String, Object> filtro) {

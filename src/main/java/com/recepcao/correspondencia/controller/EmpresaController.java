@@ -2,6 +2,7 @@ package com.recepcao.correspondencia.controller;
 
 import com.recepcao.correspondencia.clients.AppConstants;
 import com.recepcao.correspondencia.clients.ConexaClients;
+import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.EmpresaResponse;
 import com.recepcao.correspondencia.dto.contracts.CustomerWithContractResponse;
 import com.recepcao.correspondencia.dto.responses.ConexaCustomerListResponse;
@@ -137,4 +138,36 @@ public class EmpresaController {
         System.out.println("DEBUG: Empresa encontrada: " + empresa.get());
         return ResponseEntity.ok(empresa.get());
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> deletarEmpresa(@PathVariable Long id) {
+        try {
+            empresaService.deletarEmpresa(id);
+            return ResponseEntity.ok("Empresa excluída com sucesso");
+        } catch (APIExceptions e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Erro interno ao excluir empresa");
+        }
+    }
+
+    @PutMapping("/{id}/atualizar-campos")
+    public ResponseEntity<Empresa> atualizarCampos(
+            @PathVariable Long id,
+            @RequestBody Empresa updates
+    ) {
+        try {
+            Empresa atualizada = empresaService.atualizarCamposEspecificos(id, updates);
+            return ResponseEntity.ok(atualizada);
+        } catch (APIExceptions e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+
 }
