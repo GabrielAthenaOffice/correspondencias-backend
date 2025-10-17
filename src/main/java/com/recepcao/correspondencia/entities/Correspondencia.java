@@ -40,8 +40,4 @@ public class Correspondencia {
             joinColumns = @JoinColumn(name = "correspondencia_id"))
     @Column(name = "arquivo_url", length = 255)
     private List<String> anexos = new ArrayList<>();
-
-    // (opcional) mantenha temporariamente p/ compatibilidade e remova depois
-    // @Deprecated
-    // private String fotoCorrespondencia;
 }

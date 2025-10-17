@@ -1,28 +1,38 @@
-# Etapa 1 — Build do projeto com Maven
-FROM maven:3.9-eclipse-temurin-21 AS build
+# ==========================================
+# Etapa 1 — Build da aplicação
+# ==========================================
+FROM maven:3.9.6-eclipse-temurin-21 AS build
 
+# Define o diretório de trabalho dentro do container
 WORKDIR /app
 
-# Garante que o Maven e o Java usem UTF-8 (evita o erro MalformedInputException)
-ENV MAVEN_OPTS="-Dfile.encoding=UTF-8"
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
-
+# Copia o pom.xml e baixa dependências (cache eficiente)
 COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Copia o restante do código
 COPY src ./src
 
-# Faz o build sem rodar testes
+# Gera o JAR final (sem testes, para agilizar build)
 RUN mvn clean package -DskipTests
 
-# Etapa 2 — Imagem final para execução
+# ==========================================
+# Etapa 2 — Runtime (container leve)
+# ==========================================
 FROM eclipse-temurin:21-jre
 
+# Diretório da aplicação
 WORKDIR /app
 
-# Copia o jar gerado na etapa anterior
+# Copia apenas o JAR do build anterior
 COPY --from=build /app/target/*.jar app.jar
 
+# Define a variável de ambiente do profile
+ENV SPRING_PROFILES_ACTIVE=prod
+ENV PORT=8080
+
+# Expõe a porta padrão do Spring Boot
 EXPOSE 8080
 
-# Executa o aplicativo
-ENTRYPOINT ["java", "-Dfile.encoding=UTF-8", "-jar", "app.jar"]
+# Comando de inicialização
+ENTRYPOINT ["java", "-jar", "app.jar"]
