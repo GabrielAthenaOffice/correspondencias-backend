@@ -41,26 +41,28 @@ public class ResendEmailServiceAdapter {
 
             List<Attachment> attachments = new ArrayList<>();
 
-            if(anexos != null) {
+            if (anexos != null && !anexos.isEmpty()) {
                 for (AnexoDTO a : anexos) {
                     String b64 = java.util.Base64.getEncoder().encodeToString(a.data());
                     attachments.add(
-                            com.resend.services.emails.model.Attachment.builder()
+                            Attachment.builder()
                                     .fileName(a.filename())
-                                    .content(b64)           // base64
+                                    .content(b64)
                                     .build()
                     );
                 }
             }
+
             CreateEmailOptions req = CreateEmailOptions.builder()
                     .from(from)
                     .to(para)
                     .subject(subject)
-                    .text(body)     // troque para .html(...) se quiser HTML
+                    .text(body)
+                    .attachments(attachments) // ✅ adiciona anexos ao e-mail
                     .build();
 
             client.emails().send(req);
-            log.info("Resend OK -> to={}", para);
+            log.info("Resend OK -> to={} ({} anexos)", para, attachments.size());
         } catch (Exception e) {
             log.error("Resend falhou -> to={} err={}", para, e.getMessage(), e);
             throw new RuntimeException("Falha ao enviar via Resend: " + e.getMessage());

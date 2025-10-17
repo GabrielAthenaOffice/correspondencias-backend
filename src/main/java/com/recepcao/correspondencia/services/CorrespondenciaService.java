@@ -687,8 +687,14 @@ public class CorrespondenciaService {
 
 
     private List<AnexoDTO> mapMultipart(List<org.springframework.web.multipart.MultipartFile> files) {
-        if (files == null) return List.of();
+        if (files == null) {
+            System.out.println("[mapMultipart] Nenhum arquivo recebido (files == null)");
+            return List.of();
+        }
+
         List<AnexoDTO> out = new ArrayList<>();
+        System.out.printf("[mapMultipart] Recebidos %d arquivos:%n", files.size());
+
         for (var f : files) {
             try {
                 out.add(new AnexoDTO(
@@ -697,6 +703,7 @@ public class CorrespondenciaService {
                         f.getBytes()
                 ));
             } catch (Exception e) {
+                System.err.printf("❌ Falha lendo arquivo %s: %s%n", f.getOriginalFilename(), e.getMessage());
                 throw new APIExceptions("Falha lendo arquivo: " + f.getOriginalFilename());
             }
         }
