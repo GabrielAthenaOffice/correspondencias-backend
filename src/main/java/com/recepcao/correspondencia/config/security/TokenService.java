@@ -42,11 +42,12 @@ public class TokenService {
         String jwt = generateToken(userPrincipal);
 
         return ResponseCookie.from(jwtCookie, jwt)
+                .domain("localhost")
                 .path("/") // ✅ cookie vale para toda a app
                 .maxAge(24 * 60 * 60)
                 .httpOnly(true) // ✅ protege contra acesso JS
-                .secure(true) // ✅ em localhost, pode ser false
-                .sameSite("None") // ✅ necessário para enviar entre origens
+                .secure(false) // ✅ em localhost, pode ser false
+                .sameSite("Lax") // ✅ necessário para enviar entre origens
                 .build();
     }
 
@@ -64,11 +65,12 @@ public class TokenService {
 
     public ResponseCookie getCleanCookie() {
         return ResponseCookie.from(jwtCookie, "")
+                .domain("localhost")
                 .path("/")
                 .maxAge(0)
                 .httpOnly(true)
-                .secure(true)
-                .sameSite("None")
+                .secure(false)
+                .sameSite("Lax")
                 .build();
     }
 

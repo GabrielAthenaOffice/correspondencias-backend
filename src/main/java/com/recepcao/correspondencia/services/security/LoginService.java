@@ -48,6 +48,7 @@ public class LoginService {
         UserSimpleDTO userSimpleDTO = new UserSimpleDTO(userDetails.getId(), userDetails.getNome(), userDetails.getEmail());
 
         System.out.println("Authorities: " + userDetails.getAuthorities());
+        System.out.println("Role: " + userDetails.getRole());
 
         return new LoginResponseDTO(userSimpleDTO, jwtCookie.toString());
     }

@@ -32,6 +32,11 @@ public class SecurityFilter extends OncePerRequestFilter {
 
             String token = tokenService.getJwtFromCookies(request);
 
+            String cookieValue = tokenService.getJwtFromCookies(request);
+            System.out.println("🧩 Cookie recebido no backend: " + cookieValue);
+            System.out.println("🔍 Headers: " + request.getHeaderNames().asIterator().toString());
+
+
             if (token != null) {
                 String subject = tokenService.validateToken(token);
 
