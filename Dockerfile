@@ -35,4 +35,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Comando de inicialização
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["sh", "-c", "java -jar app.jar --server.port=$PORT"]
