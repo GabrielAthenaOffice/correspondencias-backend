@@ -28,7 +28,7 @@ public class Customer {
     @ElementCollection
     private List<String> phones;
 
-    @Embedded
+    @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private AddressEntity endereco;
 
     @Embedded
