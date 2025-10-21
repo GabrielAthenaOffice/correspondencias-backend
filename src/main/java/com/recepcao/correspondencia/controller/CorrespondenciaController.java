@@ -171,8 +171,11 @@ public class CorrespondenciaController {
             @PathVariable Long id,
             @RequestPart(value = "arquivos", required = false) List<MultipartFile> arquivos
     ) {
-        var corr = correspondenciaRepository.findById(id)
+        Correspondencia corr = correspondenciaRepository.findById(id)
                 .orElseThrow(() -> new APIExceptions("Correspondência não encontrada"));
+
+        corr.setStatusCorresp(StatusCorresp.AVISADA);
+        correspondenciaRepository.save(corr);
 
         var resp = correspondenciaService.envioEmailCorrespondenciaResendUpload(
                 corr.getNomeEmpresaConexa(),
