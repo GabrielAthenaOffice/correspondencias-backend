@@ -15,4 +15,5 @@ public interface EmpresaRepository extends JpaRepository<Empresa, Long> {
 
     @Query("SELECT e FROM Empresa e WHERE UPPER(e.nomeEmpresa) = UPPER(:nomeEmpresa)")
     Optional<Empresa> findByNomeEmpresaIgnoreCase(@Param("nomeEmpresa") String nomeEmpresa);
+    Optional<Empresa> findByCnpj(String cnpj);
 }

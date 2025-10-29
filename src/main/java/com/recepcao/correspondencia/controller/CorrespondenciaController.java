@@ -3,6 +3,7 @@ package com.recepcao.correspondencia.controller;
 import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.CorrespondenciaComEmpresaDTO;
 import com.recepcao.correspondencia.dto.CorrespondenciaResponse;
+import com.recepcao.correspondencia.dto.contracts.AlterarStatusDTO;
 import com.recepcao.correspondencia.dto.contracts.EmailServiceDTO;
 import com.recepcao.correspondencia.dto.record.EmailResponseRecord;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
@@ -135,6 +136,23 @@ public class CorrespondenciaController {
             return ResponseEntity.ok(atualizada);
         } catch (APIExceptions e) {
             return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<Correspondencia> alterarStatus(
+            @PathVariable Long id,
+            @Valid @RequestBody AlterarStatusDTO body
+    ) {
+        try {
+            Correspondencia atualizada =
+                    correspondenciaService.alterarStatusCorrespondencia(id, body.status(), body.motivo(), body.alteradoPor());
+            return ResponseEntity.ok(atualizada);
+        } catch (APIExceptions e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

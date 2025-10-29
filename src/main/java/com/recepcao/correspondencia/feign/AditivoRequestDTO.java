@@ -30,4 +30,13 @@ public class AditivoRequestDTO {
     private String pessoaJuridicaEndereco;
 
     private String localData;
+
+    //APENAS DTO
+    private String templateNome;
+    private String email;
+    private String telefone;
+
+    private String socio;
+    private String socioCpf;
+    private String socioEndereco;
 }

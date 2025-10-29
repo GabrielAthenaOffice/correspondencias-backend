@@ -114,25 +114,75 @@ public class CorrespondenciaService {
     }
 
     /**
-     * CRIA O ADITIVO BASEADO NA EMPRESA PRESENTE
+     * CRIA O ADITIVO - ESCOLHE ENTRE 1 OU 2 FIADORES
      */
-    public AditivoResponseDTO solicitarCriacaoAditivo(String nomeUnidade, Empresa empresa, AditivoRequestDTO dadosFormulario) {
-        UnidadeService.UnidadeInfo info = unidadeService.getUnidadeInfo(nomeUnidade);
+    public AditivoResponseDTO solicitarCriacaoAditivo(AditivoRequestDTO dadosFormulario,
+                                                      boolean doisFiadores) {
 
-        if(info == null) {
-            throw new APIExceptions("Unidade não encontrada: " + nomeUnidade);
+        UnidadeService.UnidadeInfo info = unidadeService.getUnidadeInfo(dadosFormulario.getUnidadeNome());
+        Optional<Empresa> empresaNoBanco = empresaRepository.findById(Long.valueOf(dadosFormulario.getEmpresaId()));
+
+        if(empresaNoBanco.isEmpty()) {
+            throw new APIExceptions("Empresa não encontrada");
         }
 
+        String empresaCerta = empresaNoBanco.get().getEndereco().enderecoFormatado();
+
+        if(info == null) {
+            throw new APIExceptions("Unidade não encontrada: " + dadosFormulario.getUnidadeNome());
+        }
+
+        AditivoRequestDTO aditivoRequestDTO = construirAditivoRequest(empresaCerta, dadosFormulario, info);
+
+        AditivoContratual aditivoContratual = UnidadeMapper.toEntity(aditivoRequestDTO);
+
+        log.info("🚀 Enviando aditivo para API de Aditivo - Tipo: {}",
+                doisFiadores ? "2 Fiadores" : "1 Fiador");
+
+        ResponseEntity<AditivoResponseDTO> response;
+
+        if (doisFiadores) {
+            // 🔥 CHAMA ENDPOINT PARA 2 FIADORES
+            response = aditivoClient.criarAditivoDoisFiadores(aditivoRequestDTO);
+        } else {
+            // 🔥 CHAMA ENDPOINT PARA 1 FIADOR
+            response = aditivoClient.criarAditivoContratual(aditivoRequestDTO);
+        }
+
+        if (!response.getStatusCode().is2xxSuccessful()) {
+            log.error("❌ Falha na API de Aditivo: {}", response.getStatusCode());
+            throw new APIExceptions("Falha ao criar aditivo: " + response.getStatusCode());
+        }
+
+        AditivoContratual salvo = aditivoRepository.save(aditivoContratual);
+
+        historicoService.registrar(
+                "Aditivo Criado - " + (doisFiadores ? "2 Fiadores" : "1 Fiador"),
+                salvo.getId(),
+                "Aviso de Aditivo Enviado",
+                "Aditivo criado via serviço interno"
+        );
+
+        log.info("✅ Aditivo criado com sucesso: {} - Tipo: {}",
+                salvo.getId(), doisFiadores ? "2 Fiadores" : "1 Fiador");
+
+        return response.getBody();
+    }
+
+    /**
+     * CONSTRÓI O DTO COMUM PARA AMBOS OS TIPOS
+     */
+    private AditivoRequestDTO construirAditivoRequest(String enderecoPessoaFisica, AditivoRequestDTO dadosFormulario,
+                                                      UnidadeService.UnidadeInfo info) {
         AditivoRequestDTO aditivoRequestDTO = new AditivoRequestDTO();
 
-        aditivoRequestDTO.setEmpresaId(String.valueOf(empresa.getId()));
-
-        aditivoRequestDTO.setUnidadeNome(nomeUnidade);
+        aditivoRequestDTO.setEmpresaId(String.valueOf(dadosFormulario.getEmpresaId()));
+        aditivoRequestDTO.setUnidadeNome(dadosFormulario.getUnidadeNome());
         aditivoRequestDTO.setUnidadeCnpj(info.cnpj());
         aditivoRequestDTO.setUnidadeEndereco(info.endereco());
 
-        aditivoRequestDTO.setPessoaFisicaNome(empresa.getNomeEmpresa());
-        aditivoRequestDTO.setPessoaFisicaEndereco(String.valueOf(empresa.getEndereco().enderecoFormatado()));
+        aditivoRequestDTO.setPessoaFisicaNome(dadosFormulario.getPessoaFisicaNome());
+        aditivoRequestDTO.setPessoaFisicaEndereco(enderecoPessoaFisica);
         aditivoRequestDTO.setPessoaFisicaCpf(dadosFormulario.getPessoaFisicaCpf());
 
         aditivoRequestDTO.setDataInicioContrato(dadosFormulario.getDataInicioContrato());
@@ -140,27 +190,18 @@ public class CorrespondenciaService {
         aditivoRequestDTO.setPessoaJuridicaNome(dadosFormulario.getPessoaJuridicaNome());
         aditivoRequestDTO.setPessoaJuridicaCnpj(dadosFormulario.getPessoaJuridicaCnpj());
         aditivoRequestDTO.setPessoaJuridicaEndereco(info.endereco());
+        aditivoRequestDTO.setLocalData(construirLocalData(info));
 
+        aditivoRequestDTO.setSocio(!dadosFormulario.getSocio().isEmpty() ? dadosFormulario.getSocio() : null);
+        aditivoRequestDTO.setSocioCpf(!dadosFormulario.getSocio().isEmpty() ? dadosFormulario.getSocioCpf() : null);
+        aditivoRequestDTO.setSocioEndereco(!dadosFormulario.getSocio().isEmpty() ? dadosFormulario.getSocioEndereco() : null);
+
+        return aditivoRequestDTO;
+    }
+
+    private String construirLocalData(UnidadeService.UnidadeInfo info) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd 'de' MMMM 'de' yyyy", new Locale("pt", "BR"));
-
-        String localData = info.cidade() + ", " + LocalDate.now().format(formatter);
-
-        aditivoRequestDTO.setLocalData(localData);
-
-        AditivoContratual aditivoContratual = UnidadeMapper.toEntity(aditivoRequestDTO);
-
-        ResponseEntity<AditivoResponseDTO> response = aditivoClient.criarAditivo(aditivoRequestDTO);
-
-        AditivoContratual salvo = aditivoRepository.save(aditivoContratual);
-
-        historicoService.registrar(
-                "Aditivo Criado para Empresa",
-                salvo.getId(),
-                "Aviso de Aditivo Enviado",
-                "Enviado e-mail solicitando mudança de CPF para CNPJ."
-        );
-
-        return response.getBody();
+        return info.cidade() + ", " + LocalDate.now().format(formatter);
     }
 
     /**
@@ -298,7 +339,7 @@ public class CorrespondenciaService {
     }
 
     private Correspondencia tratarCorrespondenciaDevolvida(Correspondencia correspondencia) {
-        correspondencia.setStatusCorresp(StatusCorresp.DEVOLVIDA);
+        correspondencia.setStatusCorresp(StatusCorresp.USO_INDEVIDO);
 
         empresaRepository.findByNomeEmpresa(correspondencia.getNomeEmpresaConexa())
                 .orElseGet(() -> criarEmpresaFallback(correspondencia));
@@ -339,21 +380,19 @@ public class CorrespondenciaService {
     }
 
 
-    public Correspondencia alterarStatusCorrespondencia(Long id, StatusCorresp novoStatus) {
-        Correspondencia correspondencia = correspondenciaRepository.findById(id)
+    public Correspondencia alterarStatusCorrespondencia(Long id, StatusCorresp novoStatus, String motivo, String alteradoPor) {
+        Correspondencia c = correspondenciaRepository.findById(id)
                 .orElseThrow(() -> new APIExceptions("Correspondência não encontrada com ID: " + id));
 
-        StatusCorresp statusAnterior = correspondencia.getStatusCorresp();
-        correspondencia.setStatusCorresp(novoStatus);
-        Correspondencia atualizada = correspondenciaRepository.save(correspondencia);
+        StatusCorresp anterior = c.getStatusCorresp();
+        c.setStatusCorresp(novoStatus);
+        Correspondencia atualizada = correspondenciaRepository.save(c);
 
-        historicoService.registrar(
-                "Correspondencia",
-                atualizada.getId(),
-                "Status alterado",
-                "Status alterado de '" + statusAnterior + "' para '" + novoStatus + "'."
-        );
+        String msg = "Status alterado de '" + anterior + "' para '" + novoStatus + "'."
+                + (motivo != null && !motivo.isBlank() ? " Motivo: " + motivo : "")
+                + (alteradoPor != null && !alteradoPor.isBlank() ? " (por: " + alteradoPor + ")" : "");
 
+        historicoService.registrar("Correspondencia", atualizada.getId(), "Status alterado", msg);
         return atualizada;
     }
 

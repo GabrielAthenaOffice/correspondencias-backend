@@ -4,5 +4,6 @@ public enum StatusCorresp {
     AVISADA,
     DEVOLVIDA,
     USO_INDEVIDO,
-    ANALISE
+    ANALISE,
+    RECEBIDO
 }

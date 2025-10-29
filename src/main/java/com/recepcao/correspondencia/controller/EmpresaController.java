@@ -4,28 +4,40 @@ import com.recepcao.correspondencia.clients.AppConstants;
 import com.recepcao.correspondencia.clients.ConexaClients;
 import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.EmpresaResponse;
+import com.recepcao.correspondencia.dto.contracts.CriarEmpresaDTO;
 import com.recepcao.correspondencia.dto.contracts.CustomerWithContractResponse;
 import com.recepcao.correspondencia.dto.responses.ConexaCustomerListResponse;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.Empresa;
+import com.recepcao.correspondencia.feign.AditivoRequestDTO;
+import com.recepcao.correspondencia.feign.AditivoResponseDTO;
 import com.recepcao.correspondencia.mapper.enums.Situacao;
 import com.recepcao.correspondencia.mapper.enums.StatusEmpresa;
+import com.recepcao.correspondencia.services.CorrespondenciaService;
 import com.recepcao.correspondencia.services.EmpresaService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/empresas")
 @RequiredArgsConstructor
+@Slf4j
 public class EmpresaController {
 
     private final EmpresaService empresaService;
     private final ConexaClients conexaClients;
+    private final CorrespondenciaService correspondenciaService;
 
     /**
      * Buscar empresa por idê
@@ -167,6 +179,68 @@ public class EmpresaController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    @PostMapping("/criar-por-nome")
+    public ResponseEntity<?> criarPorNome(@Valid @RequestBody CriarEmpresaDTO body,
+                                          UriComponentsBuilder uriBuilder) {
+        try {
+            Empresa criada = empresaService.criarPorNome(body);
+            var uri = uriBuilder.path("/api/empresas/{id}").buildAndExpand(criada.getId()).toUri();
+            return ResponseEntity.created(uri).body(criada); // 201 Created
+        } catch (APIExceptions e) {
+            String msg = e.getMessage() == null ? "Erro de negócio" : e.getMessage();
+            if (msg.toLowerCase().contains("já cadastrada")) {
+                return ResponseEntity.status(409).body(msg);   // 409 Conflict
+            }
+            return ResponseEntity.status(404).body(msg);      // 404 Not Found p/ "nenhuma encontrada"
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body("Erro interno ao criar empresa");
+        }
+    }
+
+
+    /**
+     * CRIAR ADITIVO CONTRATUAL
+     */
+    @PostMapping("/aditivo/um-fiador")
+    public ResponseEntity<Map<String, Object>> criarAditivoUmFiador(
+            @RequestBody AditivoRequestDTO request) {
+
+        log.info("📨 Recebida solicitação para aditivo com 1 fiador");
+
+        AditivoResponseDTO response = correspondenciaService.solicitarCriacaoAditivo(
+                request,
+                false // 1 fiador
+        );
+
+        return construirRespostaSucesso(response, "Aditivo com 1 fiador criado com sucesso");
+    }
+
+    @PostMapping("/aditivo/dois-fiadores")
+    public ResponseEntity<Map<String, Object>> criarAditivoDoisFiadores(
+            @RequestBody AditivoRequestDTO request) {
+
+        log.info("📨 Recebida solicitação para aditivo com 2 fiadores");
+
+        AditivoResponseDTO response = correspondenciaService.solicitarCriacaoAditivo(
+                request,
+                true // 2 fiadores
+        );
+
+        return construirRespostaSucesso(response, "Aditivo com 2 fiadores criado com sucesso");
+    }
+
+    private ResponseEntity<Map<String, Object>> construirRespostaSucesso(AditivoResponseDTO response, String message) {
+        Map<String, Object> resposta = new HashMap<>();
+        resposta.put("status", "success");
+        resposta.put("message", message);
+        resposta.put("aditivoId", response.getAditivoId());
+        resposta.put("urlDownload", response.getUrlDownload());
+        resposta.put("timestamp", Instant.now());
+
+        return ResponseEntity.ok(resposta);
     }
 
 

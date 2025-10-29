@@ -2,10 +2,12 @@ package com.recepcao.correspondencia.services;
 
 import com.recepcao.correspondencia.config.APIExceptions;
 import com.recepcao.correspondencia.dto.EmpresaResponse;
+import com.recepcao.correspondencia.dto.contracts.CriarEmpresaDTO;
 import com.recepcao.correspondencia.dto.responses.ConexaCustomerListResponse;
 import com.recepcao.correspondencia.dto.responses.CustomerResponse;
 import com.recepcao.correspondencia.entities.Customer;
 import com.recepcao.correspondencia.entities.Empresa;
+import com.recepcao.correspondencia.mapper.EmpresaMapper;
 import com.recepcao.correspondencia.mapper.enums.Situacao;
 import com.recepcao.correspondencia.mapper.enums.StatusEmpresa;
 import com.recepcao.correspondencia.repositories.CustomerRepository;
@@ -17,6 +19,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +32,7 @@ public class EmpresaService {
     private final CustomerRepository customerRepository;
     private final HistoricoService historicoService;
     private final ModelMapper modelMapper;
+    private final CorrespondenciaService correspondenciaService;
 
     public ConexaCustomerListResponse listarEmpresasModeloConexa(Integer pageNumber, Integer pageSize, String sortBy, String sortOrder) {
         Sort sortByAndOrder = sortOrder.equalsIgnoreCase("asc")
@@ -199,5 +203,54 @@ public class EmpresaService {
         return atualizada;
     }
 
+    @Transactional
+    public Empresa criarPorNome(CriarEmpresaDTO dto) {
+        String bruto = dto.nomeEmpresa();
+        String nome = EmpresaMapper.sanitizeCompanyName(bruto);
+        if (nome == null || nome.isBlank()) {
+            throw new APIExceptions("Nome da empresa é obrigatório.");
+        }
 
+        // busca no Conexa
+        List<CustomerResponse> candidatos = correspondenciaService.verificarEmpresaConexa(nome);
+        if (candidatos.isEmpty()) {
+            throw new APIExceptions("Nenhuma empresa encontrada no Conexa para: " + nome);
+        }
+
+        // escolhe: match exato (ignore case) → senão a primeira
+        CustomerResponse escolhido = candidatos.stream()
+                .filter(c -> equalsIgnore(c.getName(), nome) || equalsIgnore(c.getFirstName(), nome))
+                .findFirst()
+                .orElse(candidatos.get(0));
+
+        // evita duplicar por CNPJ
+        String cnpj = escolhido.getLegalPerson() != null ? escolhido.getLegalPerson().getCnpj() : null;
+        if (cnpj != null && !cnpj.isBlank()) {
+            empresaRepository.findByCnpj(cnpj.trim()).ifPresent(e -> {
+                throw new APIExceptions("Empresa já cadastrada (mesmo CNPJ).");
+            });
+        }
+
+        // evita duplicar por nome (normalizado)
+        String nomeEscolhido = escolhido.getName() != null ? escolhido.getName() : escolhido.getFirstName();
+        if (nomeEscolhido != null && !nomeEscolhido.isBlank()) {
+            empresaRepository.findByNomeEmpresaIgnoreCase(nomeEscolhido.trim()).ifPresent(e -> {
+                throw new APIExceptions("Empresa já cadastrada (mesmo nome).");
+            });
+        }
+
+        // mapeia usando SEU mapper
+        Empresa nova = EmpresaMapper.fromCustomerResponse(escolhido);
+
+        // fallback pra nome caso Conexa venha vazio
+        if (nova.getNomeEmpresa() == null || nova.getNomeEmpresa().isBlank()) {
+            nova.setNomeEmpresa(nome);
+        }
+
+        return empresaRepository.save(nova);
+    }
+
+    private static boolean equalsIgnore(String a, String b) {
+        return a != null && b != null && a.trim().equalsIgnoreCase(b.trim());
+    }
 }
