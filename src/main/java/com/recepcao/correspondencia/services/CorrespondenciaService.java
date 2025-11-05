@@ -619,8 +619,16 @@ public class CorrespondenciaService {
             throw new APIExceptions("E-mail de destino inválido: " + email);
 
         // tenta achar correspondências; se não houver, continua
-        var correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(nome);
+        List<Correspondencia> correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(nome);
         if (correspondencias == null) correspondencias = new ArrayList<>();
+
+        // 🔥 ATUALIZAÇÃO: Alterar status para AVISADA
+        if (!correspondencias.isEmpty()) {
+            for (Correspondencia corr : correspondencias) {
+                corr.setStatusCorresp(StatusCorresp.AVISADA);
+            }
+            correspondenciaRepository.saveAll(correspondencias);
+        }
 
         // monta anexos
         List<AnexoDTO> anexos = List.of();
