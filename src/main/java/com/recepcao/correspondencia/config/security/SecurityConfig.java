@@ -80,7 +80,7 @@ public class SecurityConfig {
                 "https://front-correspondencias-athena-d9yx.vercel.app",
                 "https://front-correspondencias-athena-bmf6jknu5.vercel.app",
                 "https://front-correspondencias-athena.vercel.app"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setExposedHeaders(List.of("Set-Cookie"));
         configuration.setAllowCredentials(true);
