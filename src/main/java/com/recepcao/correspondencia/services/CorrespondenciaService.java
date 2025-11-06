@@ -622,12 +622,20 @@ public class CorrespondenciaService {
         List<Correspondencia> correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(nome);
         if (correspondencias == null) correspondencias = new ArrayList<>();
 
-        // 🔥 ATUALIZAÇÃO: Alterar status para AVISADA
-        if (!correspondencias.isEmpty()) {
-            for (Correspondencia corr : correspondencias) {
+        List<Correspondencia> correspondenciaParaEnviar = correspondencias.stream()
+                .filter(correspondencia -> correspondencia.getStatusCorresp() != StatusCorresp.RECEBIDO)
+                .toList();
+
+
+        // Alterar status de todas as correspondencias do email para AVISADA
+        // Caso não haja nenhuma para enviar, ele gera EXCEPTIONS
+        if (!correspondenciaParaEnviar.isEmpty()) {
+            for (Correspondencia corr : correspondenciaParaEnviar) {
                 corr.setStatusCorresp(StatusCorresp.AVISADA);
             }
-            correspondenciaRepository.saveAll(correspondencias);
+            correspondenciaRepository.saveAll(correspondenciaParaEnviar);
+        } else {
+            throw new APIExceptions("Nenhuma correspondência pendente para enviar (todas já foram recebidas) para: " + nome);
         }
 
         // monta anexos
@@ -639,7 +647,7 @@ public class CorrespondenciaService {
         }
         // (B) se dto.isAnexos() = true, mas sem URLs → tenta carregar do banco
         else if (dto.isAnexos()) {
-            List<String> keys = correspondencias.stream()
+            List<String> keys = correspondenciaParaEnviar.stream()
                     .filter(c -> c.getAnexos() != null)
                     .flatMap(c -> c.getAnexos().stream())
                     .toList();
@@ -647,7 +655,7 @@ public class CorrespondenciaService {
         }
 
         // envia
-        resendEmail.enviarAvisoCorrespondencias(email, nome, correspondencias, anexos);
+        resendEmail.enviarAvisoCorrespondencias(email, nome, correspondenciaParaEnviar, anexos);
 
         // registra histórico
         historicoService.registrar(
@@ -658,7 +666,7 @@ public class CorrespondenciaService {
         );
 
         // pega data mais recente de recebimento
-        var dataMaisRecente = correspondencias.stream()
+        var dataMaisRecente = correspondenciaParaEnviar.stream()
                 .map(Correspondencia::getDataRecebimento)
                 .filter(Objects::nonNull)
                 .max(Comparator.naturalOrder())
@@ -710,20 +718,36 @@ public class CorrespondenciaService {
         if (nome == null || nome.isBlank()) throw new APIExceptions("Nome da empresa é obrigatório");
         if (email == null || !EMAIL_RX.matcher(email).matches()) throw new APIExceptions("E-mail de destino inválido");
 
-        var correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(nome.trim());
+        List<Correspondencia> correspondencias = correspondenciaRepository.findByNomeEmpresaConexaIgnoreCase(nome.trim());
         if (correspondencias == null || correspondencias.isEmpty())
             throw new APIExceptions("Nenhuma correspondência encontrada para '" + nome + "'");
 
-        var empresa = empresaRepository.findByNomeEmpresaIgnoreCase(nome.trim())
+        // CHECAGEM PARA NAO ENVIAR RECEBIDAS
+        List<Correspondencia> correspondenciaParaEnviar = correspondencias.stream()
+                .filter(correspondencia -> correspondencia.getStatusCorresp() != StatusCorresp.RECEBIDO)
+                .toList();
+
+        if (correspondenciaParaEnviar.isEmpty()) {
+            throw new APIExceptions("Nenhuma correspondência pendente para enviar (todas já foram recebidas) para: " + nome);
+        }
+
+        for (Correspondencia corresp : correspondenciaParaEnviar) {
+            corresp.setStatusCorresp(StatusCorresp.AVISADA);
+        }
+
+        correspondenciaRepository.saveAll(correspondenciaParaEnviar);
+
+        Empresa empresa = empresaRepository.findByNomeEmpresaIgnoreCase(nome.trim())
                 .orElseThrow(() -> new APIExceptions("Empresa não encontrada: " + nome));
 
-        resendEmail.enviarAvisoCorrespondencias(email, nome, correspondencias, anexos == null ? List.of() : anexos);
+
+        resendEmail.enviarAvisoCorrespondencias(email, nome, correspondenciaParaEnviar, anexos == null ? List.of() : anexos);
 
         historicoService.registrar("Correspondencia", empresa.getId(),
                 (anexos == null || anexos.isEmpty() ? "Aviso (upload vazio)" : "Aviso+anexos (upload)"),
                 "Enviado para '" + nome + "' (" + email + ").");
 
-        var dataMaisRecente = correspondencias.stream()
+        var dataMaisRecente = correspondenciaParaEnviar.stream()
                 .map(Correspondencia::getDataRecebimento)
                 .filter(Objects::nonNull)
                 .max(Comparator.naturalOrder())
